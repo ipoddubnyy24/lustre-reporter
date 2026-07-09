@@ -185,6 +185,17 @@ The UI is served from `static/` and calls these JSON endpoints (all `GET`;
 | `/api/change?url=…` | One Gerrit change's Verified/CI state |
 | `/api/ping?branch=es6&subject=…&url=…&ticket=LU-1` | Draft + Teams/mailto links |
 
+## Tests
+
+```bash
+./scripts/test.sh          # bootstraps .venv, runs pytest with coverage
+```
+
+Unit tests live in `tests/` (pytest). Every external interaction — the
+`llm_jira` CLIs, `git`, and Confluence/HTTP — is mocked, so the suite is
+hermetic and fast (no network, no real repos). Coverage is enforced at **100%**
+(statements **and** branches) via `pyproject.toml` (`fail_under = 100`).
+
 ## Security
 
 The server binds to **localhost only** and is HTTPS with a self-signed cert. It

@@ -22,3 +22,25 @@ packages = ["lustre_reporter", "lustre_reporter.sources", "lustre_reporter.analy
 
 [tool.setuptools.package-data]
 lustre_reporter = ["../static/*"]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "pytest-cov>=4"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["lustre_reporter"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+precision = 1
+fail_under = 100
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

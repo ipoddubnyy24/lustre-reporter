@@ -47,11 +47,10 @@ def ensure_cert(cert_dir: str) -> tuple[Path, Path]:
             f"Provide your own at {cert} and {key}, or install openssl."
         )
     directory.mkdir(parents=True, exist_ok=True)
-    cnf_path = None
+    with tempfile.NamedTemporaryFile("w", suffix=".cnf", delete=False) as fh:
+        fh.write(_CERT_CNF)
+        cnf_path = fh.name
     try:
-        with tempfile.NamedTemporaryFile("w", suffix=".cnf", delete=False) as fh:
-            fh.write(_CERT_CNF)
-            cnf_path = fh.name
         subprocess.run(
             [openssl, "req", "-x509", "-newkey", "rsa:2048", "-nodes",
              "-keyout", str(key), "-out", str(cert),
@@ -61,8 +60,7 @@ def ensure_cert(cert_dir: str) -> tuple[Path, Path]:
     except subprocess.CalledProcessError as exc:
         raise SystemExit(f"openssl failed to create a certificate:\n{exc.stderr}")
     finally:
-        if cnf_path:
-            os.unlink(cnf_path)
+        os.unlink(cnf_path)
     try:
         key.chmod(0o600)
     except OSError:
@@ -80,7 +78,7 @@ def _start_confluence_scheduler(cfg) -> None:
     import time
     from . import publish
 
-    def loop() -> None:
+    def loop() -> None:  # pragma: no cover - infinite background scheduler loop
         while True:
             now = publish.now_pt()
             time.sleep(max((publish.next_update_pt(now) - now).total_seconds(), 1))

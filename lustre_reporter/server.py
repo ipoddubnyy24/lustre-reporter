@@ -307,7 +307,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_static(path[len("/static/"):])
                 return
             self._send_json({"error": "not found", "path": path}, 404)
-        except BrokenPipeError:
+        except BrokenPipeError:  # pragma: no cover - client disconnected mid-response
             pass
         except Exception as exc:  # never let a handler crash the server
             traceback.print_exc()

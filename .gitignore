@@ -9,6 +9,12 @@ dist/
 .venv/
 venv/
 
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
 # Local machine-specific config and secrets (never commit)
 config.local.json
 certs/

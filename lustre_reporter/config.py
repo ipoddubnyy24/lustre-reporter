@@ -151,11 +151,14 @@ class Config:
         return project_prefix.upper() in self.cloud_projects
 
 
+_OVERRIDE_SCALARS = ("host", "port", "gerrit_web_base", "jira_lu_base",
+                     "jira_cloud_base", "backport_scan_days", "enrich_limit",
+                     "cert_dir", "lustre_clone")
+
+
 def _apply_overrides(cfg: Config, data: dict[str, Any]) -> None:
     """Shallow-merge simple scalar overrides; rebuild list-of-dataclass fields."""
-    for key in ("host", "port", "gerrit_web_base", "jira_lu_base",
-                "jira_cloud_base", "backport_scan_days", "enrich_limit",
-                "cert_dir", "lustre_clone"):
+    for key in _OVERRIDE_SCALARS:
         if key in data:
             setattr(cfg, key, data[key])
     if "cloud_projects" in data:
