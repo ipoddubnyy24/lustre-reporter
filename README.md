@@ -90,12 +90,12 @@ login), use the control script — a per-user LaunchAgent labeled
 `com.ddn.lustre-reporter`:
 
 ```bash
-./scripts/daemon.sh start       # install + run (also starts at login)
-./scripts/daemon.sh status      # loaded? PID? last exit? port listening?
-./scripts/daemon.sh restart
-./scripts/daemon.sh stop         # stop now (agent stays; returns at next login)
-./scripts/daemon.sh uninstall    # stop + remove the agent (disables autostart)
-./scripts/daemon.sh logs [N]     # tail stdout/stderr
+./scripts/lustre_reporter_daemon.sh start       # install + run (also starts at login)
+./scripts/lustre_reporter_daemon.sh status      # loaded? PID? last exit? port listening?
+./scripts/lustre_reporter_daemon.sh restart
+./scripts/lustre_reporter_daemon.sh stop         # stop now (agent stays; returns at next login)
+./scripts/lustre_reporter_daemon.sh uninstall    # stop + remove the agent (disables autostart)
+./scripts/lustre_reporter_daemon.sh logs [N]     # tail stdout/stderr
 ```
 
 Logs are written to `~/Library/Logs/com.ddn.lustre-reporter.*.log`. Override the

@@ -2,12 +2,13 @@
 #
 # Run Lustre Reporter as a macOS background service (launchd LaunchAgent).
 #
-#   scripts/daemon.sh start      install (if needed) + start; also autostarts at login
-#   scripts/daemon.sh stop       stop the service (agent stays installed)
-#   scripts/daemon.sh restart    restart the running service
-#   scripts/daemon.sh status     loaded? PID? last exit? port listening?
-#   scripts/daemon.sh logs [N]   tail the last N lines of stdout/stderr (default 40)
-#   scripts/daemon.sh uninstall  stop and remove the agent (disables login autostart)
+# Usage: scripts/lustre_reporter_daemon.sh <command>
+#   start      install (if needed) + start; also autostarts at login
+#   stop       stop the service (agent stays installed)
+#   restart    restart the running service
+#   status     loaded? PID? last exit? port listening?
+#   logs [N]   tail the last N lines of stdout/stderr (default 40)
+#   uninstall  stop and remove the agent (disables login autostart)
 #
 # Overridable env: LUSTRE_REPORTER_PORT (default 9835), LR_DAEMON_LABEL.
 set -euo pipefail
