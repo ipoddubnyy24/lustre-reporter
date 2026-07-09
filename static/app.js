@@ -86,7 +86,7 @@ function snack(msg) {
   snackTimer = setTimeout(() => s.classList.remove("show"), 2800);
 }
 function markUpdated() {
-  $("#updated").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  $("#updated").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
 // ---------- shared bits ----------
