@@ -60,24 +60,31 @@ certificate warning (the cert is generated into `certs/`, which is git-ignored).
 
 Options: `--port N`, `--host H`, `--open` (open a browser), `--ttl S` (cache TTL).
 
-## Run at login (macOS)
+## Install as a macOS app
 
-Build a native app bundle that is **clearly identifiable in System Settings →
-General → Login Items** — it appears as **"Lustre Reporter"** with a bar-chart
-icon, not an anonymous `python3` process:
+Build a **self-contained** "Lustre Reporter.app" — it bundles the code and web
+assets, so it runs from `/Applications` with no source checkout. Either build a
+drag-to-install disk image, or install straight to `~/Applications`:
 
 ```bash
-./scripts/make-macos-app.sh          # builds "~/Applications/Lustre Reporter.app"
+./scripts/make-dmg.sh        # → dist/Lustre Reporter.dmg  (open it, drag onto Applications)
+# or:
+./scripts/make-macos-app.sh  # installs "~/Applications/Lustre Reporter.app"
 ```
 
-Then add **Lustre Reporter** under Login Items → **+**. At login it starts the
-server and opens the dashboard. Bundle id: `com.ddn.lustre-reporter`. (It runs as
-a background agent — `LSUIElement` — so it doesn't clutter the Dock; remove that
-key from `Info.plist` if you want a Dock icon.)
+Double-click to run — it opens **https://localhost:9835** and shows a Dock icon
+(quit from there). It's **clearly identifiable in System Settings → General →
+Login Items**, so add **Lustre Reporter** there to launch at login (bundle id
+`com.ddn.lustre-reporter`).
 
-Prefer a headless launchd service? Use the agent template instead — it's
-identifiable in `launchctl list` and Login Items by the label
-`com.ddn.lustre-reporter`:
+- **Requirements:** `python3` (macOS Command Line Tools or Homebrew) and the
+  `llm_jira` CLIs (`jira`/`gerrit`/`maloo`) on `PATH` for data.
+- **Writable state:** the TLS cert and an optional `config.local.json` live in
+  `~/Library/Application Support/Lustre Reporter/` — the app bundle stays
+  read-only. (Overridable with `LUSTRE_REPORTER_CERT_DIR` / `LUSTRE_REPORTER_CONFIG`.)
+
+Prefer a headless launchd service instead? Use the agent template — identifiable
+in `launchctl list` and Login Items by the label `com.ddn.lustre-reporter`:
 
 ```bash
 sed "s#__REPO_DIR__#$HOME/work/src/lustre_reporter#g" \

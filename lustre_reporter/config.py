@@ -8,12 +8,18 @@ git-ignored) with the same shape as ``config.example.json``.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-LOCAL_CONFIG = REPO_ROOT / "config.local.json"
+# Writable per-user location used when installed as a macOS .app bundle
+# (the bundle's Resources dir is read-only). Overridable via env.
+APP_SUPPORT = Path(
+    os.environ.get("LUSTRE_REPORTER_HOME")
+    or Path.home() / "Library" / "Application Support" / "Lustre Reporter"
+)
 
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 9835
@@ -98,8 +104,10 @@ class Config:
     backport_scan_days: int = 120
     # Cap on candidates enriched with a live Jira/commit lookup per request.
     enrich_limit: int = 60
-    # Directory holding the self-signed TLS cert/key.
-    cert_dir: str = str(REPO_ROOT / "certs")
+    # Directory holding the self-signed TLS cert/key. Env override lets the
+    # installed .app keep certs in a writable location outside the bundle.
+    cert_dir: str = field(default_factory=lambda: (
+        os.environ.get("LUSTRE_REPORTER_CERT_DIR") or str(REPO_ROOT / "certs")))
 
     def branch(self, key: str) -> Branch:
         for b in self.branches:
@@ -134,11 +142,25 @@ def _apply_overrides(cfg: Config, data: dict[str, Any]) -> None:
         cfg.masters = [MasterRepo(**m) for m in data["masters"]]
 
 
+def _config_candidates() -> list[Path]:
+    """config.local.json search order: explicit env, source tree, then the
+    per-user Application Support dir (used by the installed app)."""
+    paths: list[Path] = []
+    env = os.environ.get("LUSTRE_REPORTER_CONFIG")
+    if env:
+        paths.append(Path(env))
+    paths.append(REPO_ROOT / "config.local.json")
+    paths.append(APP_SUPPORT / "config.local.json")
+    return paths
+
+
 def load_config() -> Config:
     cfg = Config()
-    if LOCAL_CONFIG.exists():
-        try:
-            _apply_overrides(cfg, json.loads(LOCAL_CONFIG.read_text()))
-        except (json.JSONDecodeError, TypeError, ValueError) as exc:
-            raise SystemExit(f"Invalid {LOCAL_CONFIG}: {exc}") from exc
+    for path in _config_candidates():
+        if path.exists():
+            try:
+                _apply_overrides(cfg, json.loads(path.read_text()))
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                raise SystemExit(f"Invalid {path}: {exc}") from exc
+            break
     return cfg

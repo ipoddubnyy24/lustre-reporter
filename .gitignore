@@ -1,10 +1,11 @@
-# Python
+# Python / build output
 __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
 build/
 dist/
+*.dmg
 .venv/
 venv/
 
