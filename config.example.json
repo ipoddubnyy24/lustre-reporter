@@ -4,6 +4,11 @@
   "port": 9835,
   "backport_scan_days": 120,
   "lustre_clone": "~/work/src/lustre/lustre-release",
+  "git_fetch": {
+    "remotes": [],
+    "use_gerrit_https": true,
+    "use_origin": true
+  },
   "confluence": {
     "enabled": true,
     "auto_publish": true,

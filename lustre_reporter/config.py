@@ -112,6 +112,15 @@ class Config:
     # recent release tag for the "since last tag" landed filter.
     lustre_clone: str = "~/work/src/lustre/lustre-release"
 
+    # How to refresh the clone before reading tags — tried in order, then the
+    # local copy as-is. Put a GitHub mirror URL (may use {branch}) in "remotes"
+    # to pull from GitHub first; Gerrit HTTPS needs no SSH key.
+    git_fetch: dict = field(default_factory=lambda: {
+        "remotes": [],
+        "use_gerrit_https": True,
+        "use_origin": True,
+    })
+
     # Auto-publish the per-branch "landed patches" QA changelog to Confluence
     # (twice daily at 00:00 / 12:00 America/Los_Angeles when run as the daemon).
     confluence: dict = field(default_factory=lambda: {
@@ -155,6 +164,8 @@ def _apply_overrides(cfg: Config, data: dict[str, Any]) -> None:
         cfg.branches = [Branch(**b) for b in data["branches"]]
     if "masters" in data:
         cfg.masters = [MasterRepo(**m) for m in data["masters"]]
+    if isinstance(data.get("git_fetch"), dict):
+        cfg.git_fetch.update(data["git_fetch"])
     if isinstance(data.get("confluence"), dict):
         cfg.confluence.update(data["confluence"])
 

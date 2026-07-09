@@ -151,7 +151,8 @@ def api_landed(cfg: Config, qs: dict) -> dict:
         entry = {"key": b.key, "label": b.label, "gerrit_branch": b.gerrit_branch,
                  "gerrit_project": b.gerrit_project}
         if mode == "tag":
-            tg = git_tags.last_tag(cfg.lustre_clone, b.gerrit_branch, tag=req_tag)
+            tg = git_tags.last_tag(cfg.lustre_clone, b.gerrit_branch, tag=req_tag,
+                                   fetch_cfg=cfg.git_fetch)
             if tg.get("fetch_note"):
                 entry["fetch_note"] = tg["fetch_note"]
             if not tg.get("ok"):

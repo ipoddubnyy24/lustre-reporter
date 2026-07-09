@@ -15,6 +15,7 @@ import re
 import subprocess
 from collections import Counter
 from pathlib import Path
+from urllib.parse import quote
 
 from ..util import parse_tickets
 
@@ -28,8 +29,66 @@ def _git(clone: str, args: list[str], timeout: int = 120) -> subprocess.Complete
                           capture_output=True, text=True, timeout=timeout)
 
 
+def _read_env(path: Path) -> dict:
+    env = {}
+    try:
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return env
+
+
+def _gerrit_https_url(clone: str) -> str | None:
+    """Authenticated Gerrit git-over-HTTPS URL, derived from the clone's origin
+    host/project + the gerrit-cli HTTP credentials. Needs no SSH key, so it
+    works from the daemon/.app where an SSH agent may be absent."""
+    origin = _git(clone, ["remote", "get-url", "origin"]).stdout.strip()
+    m = re.search(r"://([^/:]+)(?::\d+)?/(.+?)(?:\.git)?$", origin)
+    if not m:
+        return None
+    host, project = m.group(1), m.group(2)
+    env = _read_env(Path.home() / ".config" / "gerrit-cli" / ".env")
+    user, pw = env.get("GERRIT_USER"), env.get("GERRIT_PASS")
+    if not (user and pw):
+        return None
+    return f"https://{quote(user, safe='')}:{quote(pw, safe='')}@{host}/a/{project}"
+
+
+def _ensure_fresh(clone: str, gerrit_branch: str, fetch_cfg: dict) -> dict:
+    """Update the clone's refs from the best reachable source, in order:
+    configured remotes (e.g. a GitHub mirror) → Gerrit HTTPS → origin (SSH) →
+    give up and use the local copy. Returns {source, note}; ``note`` is a
+    user-facing warning only when it fell back to a possibly-stale local copy.
+    """
+    refspec = f"+refs/heads/{gerrit_branch}:refs/remotes/origin/{gerrit_branch}"
+    attempts: list[tuple[str, str]] = []
+    for url in (fetch_cfg.get("remotes") or []):
+        attempts.append(("remote", url.replace("{branch}", gerrit_branch)))
+    if fetch_cfg.get("use_gerrit_https", True):
+        https = _gerrit_https_url(clone)
+        if https:
+            attempts.append(("gerrit-https", https))
+    if fetch_cfg.get("use_origin", True):
+        attempts.append(("origin", "origin"))
+
+    for source, target in attempts:
+        try:
+            # --force so a moved release tag can't abort the whole fetch
+            res = _git(clone, ["fetch", "--quiet", "--force", "--tags", target, refspec], timeout=120)
+        except subprocess.TimeoutExpired:
+            continue
+        if res.returncode == 0:
+            return {"source": source, "note": None}
+    return {"source": "local",
+            "note": "⚠ could not reach any remote — showing the local clone copy, which may be stale"}
+
+
 def last_tag(clone_dir: str, gerrit_branch: str, *, tag: str | None = None,
-             fetch: bool = True) -> dict:
+             fetch: bool = True, fetch_cfg: dict | None = None) -> dict:
     """Resolve a tag for ``origin/<gerrit_branch>`` and return
     {ok, tag, date (YYYY-MM-DD), datetime, manual, fetch_note}.
 
@@ -43,15 +102,7 @@ def last_tag(clone_dir: str, gerrit_branch: str, *, tag: str | None = None,
                 "Set 'lustre_clone' in config.local.json to your ex/lustre-release checkout."}
 
     ref = f"origin/{gerrit_branch}"
-    fetch_note = None
-    if fetch:
-        try:
-            fr = _git(clone, ["fetch", "--quiet", "--tags", "origin", gerrit_branch])
-            if fr.returncode != 0:
-                tail = (fr.stderr or "").strip().splitlines()
-                fetch_note = tail[-1] if tail else "git fetch failed; using local clone state"
-        except subprocess.TimeoutExpired:
-            fetch_note = "git fetch timed out; using local clone state"
+    fetch_note = _ensure_fresh(clone, gerrit_branch, fetch_cfg or {})["note"] if fetch else None
 
     if _git(clone, ["rev-parse", "--verify", "--quiet", ref]).returncode != 0:
         return {"ok": False, "error": f"'{ref}' not found in {clone} (fetch it first)"}
@@ -120,7 +171,7 @@ def _commits(clone: str, rng: str) -> list[dict]:
 
 
 def build_changelog(clone_dir: str, gerrit_branch: str, *, max_builds: int = 5,
-                    fetch: bool = True) -> dict:
+                    fetch: bool = True, fetch_cfg: dict | None = None) -> dict:
     """Per-build changelog for one branch: the patches each recent tag introduced
     (``prev_tag..tag``) plus what's merged but unreleased (``latest_tag..HEAD``).
 
@@ -133,15 +184,7 @@ def build_changelog(clone_dir: str, gerrit_branch: str, *, max_builds: int = 5,
                 "Set 'lustre_clone' in config.local.json."}
 
     ref = f"origin/{gerrit_branch}"
-    fetch_note = None
-    if fetch:
-        try:
-            fr = _git(clone, ["fetch", "--quiet", "--tags", "origin", gerrit_branch])
-            if fr.returncode != 0:
-                tail = (fr.stderr or "").strip().splitlines()
-                fetch_note = tail[-1] if tail else "git fetch failed; using local clone state"
-        except subprocess.TimeoutExpired:
-            fetch_note = "git fetch timed out; using local clone state"
+    fetch_note = _ensure_fresh(clone, gerrit_branch, fetch_cfg or {})["note"] if fetch else None
 
     if _git(clone, ["rev-parse", "--verify", "--quiet", ref]).returncode != 0:
         return {"ok": False, "error": f"'{ref}' not found in {clone}", "fetch_note": fetch_note}

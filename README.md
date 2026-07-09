@@ -161,6 +161,14 @@ the backport scan window, and `lustre_clone` (your local `ex/lustre-release`
 checkout, used by the Landed **"since last tag"** filter to resolve each
 branch's latest release tag — or a specific tag you type in) are all adjustable.
 
+**Data freshness:** the tag/changelog data is refreshed from the remote *before
+every read* so it never depends on your local copy being up to date — it tries,
+in order, any URLs in `git_fetch.remotes` (put a GitHub mirror here, may use
+`{branch}`), then **Gerrit over HTTPS** (needs no SSH key), then the clone's SSH
+origin, then the local copy as-is (shown with a visible ⚠ if no remote was
+reachable). The other reports (stability, landed-by-days, backports) already
+query Gerrit/Maloo live.
+
 ## API
 
 The UI is served from `static/` and calls these JSON endpoints (all `GET`;

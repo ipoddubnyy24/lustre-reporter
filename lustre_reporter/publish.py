@@ -150,7 +150,8 @@ def publish_all(cfg) -> dict:
     for b in cfg.branches:
         entry = {"branch": b.key, "label": b.label}
         cl = git_tags.build_changelog(cfg.lustre_clone, b.gerrit_branch,
-                                      max_builds=conf.get("max_builds", 5))
+                                      max_builds=conf.get("max_builds", 5),
+                                      fetch_cfg=cfg.git_fetch)
         if not cl.get("ok"):
             entry.update({"ok": False, "error": cl.get("error")})
             results.append(entry)
