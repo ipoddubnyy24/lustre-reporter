@@ -65,7 +65,7 @@ const S = {
   tab: "stability",
   selected: [],            // branch keys shown across all reports (top-bar chips)
   stability: { days: 30, custom: false, from: "", to: "" },
-  landed: { days: 7, mode: "days" },
+  landed: { days: 7, mode: "days", tag: "" },
   backports: { days: 120, onlyGaps: true },
 };
 // stability/topfail are keyed by branch (one section per selected branch)
@@ -286,24 +286,38 @@ function drawTrend(trend) {
 //  LANDED
 // =====================================================================
 function landedControls() {
+  const L = S.landed;
   const sel = el("select", {
     onchange: (e) => {
       const v = e.target.value;
-      if (v === "tag") S.landed.mode = "tag";
-      else { S.landed.mode = "days"; S.landed.days = +v; }
+      if (v === "tag") { L.mode = "tag"; }
+      else { L.mode = "days"; L.days = +v; L.tag = ""; }
       loadLanded(false);
     },
   },
-    ...[7, 14, 30].map((d) => el("option", { value: d, selected: S.landed.mode === "days" && S.landed.days === d ? "" : null }, "Last " + d + " days")),
-    el("option", { value: "tag", selected: S.landed.mode === "tag" ? "" : null }, "Since last tag"));
-  return el("div", { class: "controls" },
-    el("div", { class: "field" }, el("label", {}, "Window"), sel),
-    el("span", { class: "muted small", style: "align-self:flex-end" },
-      S.landed.mode === "tag" ? "Patches merged to each branch since its latest release tag." : "Patches merged to each ExaScaler branch."));
+    ...[7, 14, 30].map((d) => el("option", { value: d, selected: L.mode === "days" && L.days === d ? "" : null }, "Last " + d + " days")),
+    el("option", { value: "tag", selected: L.mode === "tag" ? "" : null }, "Since last tag"));
+  const row = el("div", { class: "controls" },
+    el("div", { class: "field" }, el("label", {}, "Window"), sel));
+  if (L.mode === "tag") {
+    const input = el("input", {
+      type: "text", value: L.tag || "", placeholder: "latest",
+      title: "Blank = each branch's latest tag; or type a tag, e.g. 2.16.0-ddn52",
+      oninput: (e) => { L.tag = e.target.value; },
+      onkeydown: (e) => { if (e.key === "Enter") { L.tag = e.target.value.trim(); loadLanded(false); } },
+    });
+    row.append(
+      el("div", { class: "field" }, el("label", {}, "Tag"), input),
+      el("button", { class: "btn filled sm", style: "align-self:flex-end", onclick: () => { L.tag = input.value.trim(); loadLanded(false); } }, "Apply"));
+  }
+  row.append(el("span", { class: "muted small", style: "align-self:flex-end" },
+    L.mode !== "tag" ? "Patches merged to each ExaScaler branch."
+      : (L.tag ? "Patches merged since tag " + L.tag + "." : "Patches merged since each branch's latest tag (blank = latest).")));
+  return row;
 }
 async function loadLanded(refresh) {
   LOADING.landed = true; renderLanded();
-  try { DATA.landed = await api("/api/landed", { mode: S.landed.mode, days: S.landed.days }, refresh); }
+  try { DATA.landed = await api("/api/landed", { mode: S.landed.mode, days: S.landed.days, tag: S.landed.tag || undefined }, refresh); }
   catch (e) { DATA.landed = { branches: [], error: String(e) }; }
   LOADING.landed = false; renderLanded();
 }
@@ -316,7 +330,7 @@ function renderLanded() {
   const tagMode = DATA.landed.mode === "tag";
   for (const b of shown) {
     const head = el("h2", {}, b.label, "  ", el("span", { class: "chip primary" }, b.gerrit_branch));
-    if (tagMode && b.tag) head.append(" ", el("span", { class: "chip tertiary", title: "latest tag" + (b.tag_date ? " · " + b.tag_date : "") }, b.tag));
+    if (tagMode && b.tag) head.append(" ", el("span", { class: "chip tertiary", title: (b.tag_manual ? "specified tag" : "latest tag") + (b.tag_date ? " · " + b.tag_date : "") }, b.tag));
     const meta = !b.ok ? "" : (tagMode ? b.count + " since tag" : b.count + " merged in " + DATA.landed.days + "d");
     head.append("  ", el("span", { class: "muted small" }, meta));
     const card = el("div", { class: "card" }, head);

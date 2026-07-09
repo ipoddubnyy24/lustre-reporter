@@ -133,8 +133,8 @@ Everything has a sensible default (baked into `lustre_reporter/config.py`).
 To override, copy `config.example.json` to **`config.local.json`** (git-ignored)
 and edit — branches, master repos to scan, ping recipients, Jira hosts, port,
 the backport scan window, and `lustre_clone` (your local `ex/lustre-release`
-checkout, used by the Landed **"since last tag"** filter to find each branch's
-latest release tag) are all adjustable.
+checkout, used by the Landed **"since last tag"** filter to resolve each
+branch's latest release tag — or a specific tag you type in) are all adjustable.
 
 ## API
 

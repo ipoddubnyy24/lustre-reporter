@@ -20,9 +20,15 @@ def _git(clone: str, args: list[str], timeout: int = 120) -> subprocess.Complete
                           capture_output=True, text=True, timeout=timeout)
 
 
-def last_tag(clone_dir: str, gerrit_branch: str, *, fetch: bool = True) -> dict:
-    """Return {ok, tag, date (YYYY-MM-DD), datetime, fetch_note} for the newest
-    tag reachable from ``origin/<gerrit_branch>``; {ok: False, error} otherwise."""
+def last_tag(clone_dir: str, gerrit_branch: str, *, tag: str | None = None,
+             fetch: bool = True) -> dict:
+    """Resolve a tag for ``origin/<gerrit_branch>`` and return
+    {ok, tag, date (YYYY-MM-DD), datetime, manual, fetch_note}.
+
+    With ``tag`` given, verify it exists and is reachable from the branch;
+    otherwise pick the newest tag reachable from the branch. On failure returns
+    {ok: False, error}.
+    """
     clone = os.path.expanduser(clone_dir or "")
     if not clone or not (Path(clone) / ".git").exists():
         return {"ok": False, "error": f"Lustre clone not found at '{clone_dir}'. "
@@ -42,12 +48,23 @@ def last_tag(clone_dir: str, gerrit_branch: str, *, fetch: bool = True) -> dict:
     if _git(clone, ["rev-parse", "--verify", "--quiet", ref]).returncode != 0:
         return {"ok": False, "error": f"'{ref}' not found in {clone} (fetch it first)"}
 
-    tags = _git(clone, ["tag", "--merged", ref, "--sort=-creatordate"])
-    tag_list = [t for t in tags.stdout.splitlines() if t.strip()]
-    if not tag_list:
-        return {"ok": False, "error": f"no tags reachable from {ref}"}
+    if tag:
+        peeled = f"refs/tags/{tag}^{{commit}}"
+        if _git(clone, ["rev-parse", "--verify", "--quiet", peeled]).returncode != 0:
+            return {"ok": False, "error": f"tag '{tag}' not found in the clone",
+                    "fetch_note": fetch_note}
+        if _git(clone, ["merge-base", "--is-ancestor", peeled, ref]).returncode != 0:
+            return {"ok": False, "error": f"tag '{tag}' is not on {gerrit_branch}",
+                    "fetch_note": fetch_note}
+        chosen, manual = tag, True
+    else:
+        tags = _git(clone, ["tag", "--merged", ref, "--sort=-creatordate"])
+        tag_list = [t for t in tags.stdout.splitlines() if t.strip()]
+        if not tag_list:
+            return {"ok": False, "error": f"no tags reachable from {ref}",
+                    "fetch_note": fetch_note}
+        chosen, manual = tag_list[0], False
 
-    tag = tag_list[0]
-    dt = _git(clone, ["log", "-1", "--format=%cI", tag + "^{commit}"]).stdout.strip()
-    return {"ok": True, "tag": tag, "date": (dt[:10] if dt else None),
-            "datetime": dt or None, "fetch_note": fetch_note}
+    dt = _git(clone, ["log", "-1", "--format=%cI", chosen + "^{commit}"]).stdout.strip()
+    return {"ok": True, "tag": chosen, "date": (dt[:10] if dt else None),
+            "datetime": dt or None, "manual": manual, "fetch_note": fetch_note}
