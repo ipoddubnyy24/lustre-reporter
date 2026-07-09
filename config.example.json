@@ -4,6 +4,15 @@
   "port": 9835,
   "backport_scan_days": 120,
   "lustre_clone": "~/work/src/lustre/lustre-release",
+  "confluence": {
+    "enabled": true,
+    "auto_publish": true,
+    "site": "https://ime-ddn.atlassian.net",
+    "space_id": "1075183618",
+    "parent_id": "3692101696",
+    "title_template": "ExaScaler Landed Patches — {label} ({gerrit_branch})",
+    "max_builds": 5
+  },
   "gerrit_web_base": "https://review.whamcloud.com",
   "jira_lu_base": "https://jira.whamcloud.com/browse",
   "jira_cloud_base": "https://ime-ddn.atlassian.net/browse",

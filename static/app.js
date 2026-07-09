@@ -310,10 +310,31 @@ function landedControls() {
       el("div", { class: "field" }, el("label", {}, "Tag"), input),
       el("button", { class: "btn filled sm", style: "align-self:flex-end", onclick: () => { L.tag = input.value.trim(); loadLanded(false); } }, "Apply"));
   }
+  if (CFG.confluence_enabled) {
+    row.append(el("button", {
+      class: "btn tonal sm", style: "align-self:flex-end",
+      title: "Build the per-build QA changelog and publish it to Confluence now",
+      onclick: (e) => publishToConfluence(e.currentTarget),
+    }, icon("publish"), "Publish to Confluence"));
+  }
   row.append(el("span", { class: "muted small", style: "align-self:flex-end" },
     L.mode !== "tag" ? "Patches merged to each ExaScaler branch."
       : (L.tag ? "Patches merged since tag " + L.tag + "." : "Patches merged since each branch's latest tag (blank = latest).")));
   return row;
+}
+async function publishToConfluence(btn) {
+  const saved = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = "Publishing…";
+  try {
+    const r = await api("/api/publish", {}, true);
+    const results = r.results || [];
+    if (results.length && results.some((x) => x.ok)) {
+      snack("Confluence: " + results.map((x) => x.branch + " " + (x.ok ? x.action : "failed")).join(" · "));
+    } else {
+      snack("Publish failed: " + (r.error || results.map((x) => x.error).filter(Boolean)[0] || "unknown"));
+    }
+  } catch (e) { snack("Publish failed: " + e); }
+  finally { btn.disabled = false; btn.innerHTML = saved; }
 }
 async function loadLanded(refresh) {
   LOADING.landed = true; renderLanded();

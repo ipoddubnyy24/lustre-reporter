@@ -112,6 +112,18 @@ class Config:
     # recent release tag for the "since last tag" landed filter.
     lustre_clone: str = "~/work/src/lustre/lustre-release"
 
+    # Auto-publish the per-branch "landed patches" QA changelog to Confluence
+    # (twice daily at 00:00 / 12:00 America/Los_Angeles when run as the daemon).
+    confluence: dict = field(default_factory=lambda: {
+        "enabled": True,
+        "auto_publish": True,
+        "site": "https://ime-ddn.atlassian.net",
+        "space_id": "1075183618",
+        "parent_id": "3692101696",
+        "title_template": "ExaScaler Landed Patches — {label} ({gerrit_branch})",
+        "max_builds": 5,
+    })
+
     def branch(self, key: str) -> Branch:
         for b in self.branches:
             if b.key == key:
@@ -143,6 +155,8 @@ def _apply_overrides(cfg: Config, data: dict[str, Any]) -> None:
         cfg.branches = [Branch(**b) for b in data["branches"]]
     if "masters" in data:
         cfg.masters = [MasterRepo(**m) for m in data["masters"]]
+    if isinstance(data.get("confluence"), dict):
+        cfg.confluence.update(data["confluence"])
 
 
 def _config_candidates() -> list[Path]:

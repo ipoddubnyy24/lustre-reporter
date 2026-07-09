@@ -18,6 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from . import publish
 from .analysis import backport, stability
 from .config import Config
 from .sources import gerrit, git_tags, jira, maloo, teams
@@ -80,6 +81,7 @@ def api_config(cfg: Config, qs: dict) -> dict:
                      "project": m.gerrit_project, "branch": m.gerrit_branch}
                     for m in cfg.masters],
         "gerrit_web_base": cfg.gerrit_web_base,
+        "confluence_enabled": bool((cfg.confluence or {}).get("enabled")),
         "today": date.today().isoformat(),
         "defaults": {"landed_days": 7, "stability_days": 30,
                      "backport_days": cfg.backport_scan_days},
@@ -230,6 +232,11 @@ def api_ping(cfg: Config, qs: dict) -> dict:
     return result
 
 
+def api_publish(cfg: Config, qs: dict) -> dict:
+    """Build + push the per-branch landed-patches changelog to Confluence now."""
+    return publish.publish_all(cfg)
+
+
 # Endpoints that are safe/beneficial to cache, with their TTLs (seconds).
 _CACHED = {
     "/api/stability": 300,
@@ -248,6 +255,7 @@ _ROUTES = {
     "/api/ticket": api_ticket,
     "/api/change": api_change,
     "/api/ping": api_ping,
+    "/api/publish": api_publish,
 }
 
 

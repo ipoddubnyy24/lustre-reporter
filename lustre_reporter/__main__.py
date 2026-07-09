@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import ssl
 import subprocess
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 
 from .config import load_config
@@ -69,6 +71,32 @@ def ensure_cert(cert_dir: str) -> tuple[Path, Path]:
     return cert, key
 
 
+def _start_confluence_scheduler(cfg) -> None:
+    """Background thread that publishes the changelog at 00:00 & 12:00 Pacific."""
+    conf = getattr(cfg, "confluence", None) or {}
+    if not (conf.get("enabled") and conf.get("auto_publish", True)):
+        return
+    import threading
+    import time
+    from . import publish
+
+    def loop() -> None:
+        while True:
+            now = publish.now_pt()
+            time.sleep(max((publish.next_update_pt(now) - now).total_seconds(), 1))
+            try:
+                res = publish.publish_all(cfg)
+                print(f"[confluence] auto-publish {publish.now_pt():%Y-%m-%d %H:%M %Z}: "
+                      f"{'ok' if res.get('ok') else 'FAILED ' + str(res.get('error') or res.get('results'))}",
+                      flush=True)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+
+    threading.Thread(target=loop, name="confluence-scheduler", daemon=True).start()
+    print(f"  Confluence auto-publish ON → next {publish.next_update_pt():%Y-%m-%d %H:%M} PT",
+          flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     cfg = load_config()
     parser = argparse.ArgumentParser(
@@ -82,10 +110,18 @@ def main(argv: list[str] | None = None) -> int:
                         help="cache TTL in seconds for heavy queries (default: 300)")
     parser.add_argument("--open", action="store_true",
                         help="open the dashboard in a browser on start")
+    parser.add_argument("--publish-now", action="store_true",
+                        help="publish the landed-patches changelog to Confluence once, then exit")
     args = parser.parse_args(argv)
 
     cfg.host = args.host
     cfg.port = args.port
+
+    if args.publish_now:
+        from . import publish
+        res = publish.publish_all(cfg)
+        print(json.dumps(res, indent=2))
+        return 0 if res.get("ok") else 1
 
     cert, key = ensure_cert(cfg.cert_dir)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -104,6 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.open:
         import webbrowser
         webbrowser.open(url)
+    _start_confluence_scheduler(cfg)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

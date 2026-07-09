@@ -11,8 +11,16 @@ reachable tag, and return its date. The caller then reuses the normal Gerrit
 from __future__ import annotations
 
 import os
+import re
 import subprocess
+from collections import Counter
 from pathlib import Path
+
+from ..util import parse_tickets
+
+_REVIEW_RE = re.compile(r"Reviewed-on:\s*(https?://\S+/\+/(\d+))")
+_TICKET_PREFIX_RE = re.compile(r"^\s*((?:LU|EX|DDN|EHT|GCP|IME|RM)-\d+\s+)+", re.I)
+_NEW_TAG_RE = re.compile(r"build:\s*New tag", re.I)
 
 
 def _git(clone: str, args: list[str], timeout: int = 120) -> subprocess.CompletedProcess:
@@ -68,3 +76,94 @@ def last_tag(clone_dir: str, gerrit_branch: str, *, tag: str | None = None,
     dt = _git(clone, ["log", "-1", "--format=%cI", chosen + "^{commit}"]).stdout.strip()
     return {"ok": True, "tag": chosen, "date": (dt[:10] if dt else None),
             "datetime": dt or None, "manual": manual, "fetch_note": fetch_note}
+
+
+def _subsystem(subject: str) -> str:
+    """The subsystem prefix of a Lustre commit subject, e.g. 'kernel', 'pcc'."""
+    rest = _TICKET_PREFIX_RE.sub("", subject or "")
+    m = re.match(r"\s*([A-Za-z0-9_.\-/]+)\s*:", rest)
+    return m.group(1).lower() if m else "misc"
+
+
+def _areas(patches: list[dict]) -> list[list]:
+    """[[subsystem, count], ...] most-common first — the QA 'areas touched' line."""
+    counts = Counter(p["subsystem"] for p in patches if p.get("subsystem"))
+    return [[name, n] for name, n in counts.most_common()]
+
+
+def _commits(clone: str, rng: str) -> list[dict]:
+    """Parse `git log <rng>` into patch records, skipping 'New tag' bump commits."""
+    fmt = "%H%x1f%s%x1f%an%x1f%cI%x1f%b%x1e"
+    out = _git(clone, ["log", rng, "--format=" + fmt]).stdout
+    records = []
+    for chunk in out.split("\x1e"):
+        chunk = chunk.strip("\n")
+        if not chunk.strip():
+            continue
+        parts = chunk.split("\x1f")
+        if len(parts) < 5:
+            continue
+        _sha, subject, author, cdate, body = parts[0], parts[1], parts[2], parts[3], parts[4]
+        if _NEW_TAG_RE.search(subject):
+            continue
+        m = _REVIEW_RE.search(body)
+        records.append({
+            "number": int(m.group(2)) if m else None,
+            "url": m.group(1) if m else None,
+            "subject": subject,
+            "owner": author,
+            "date": cdate[:10] if cdate else None,
+            "tickets": parse_tickets(subject),
+            "subsystem": _subsystem(subject),
+        })
+    return records
+
+
+def build_changelog(clone_dir: str, gerrit_branch: str, *, max_builds: int = 5,
+                    fetch: bool = True) -> dict:
+    """Per-build changelog for one branch: the patches each recent tag introduced
+    (``prev_tag..tag``) plus what's merged but unreleased (``latest_tag..HEAD``).
+
+    Returns {ok, branch, latest_tag, latest_date, unreleased[], unreleased_count,
+             builds[{tag, prev, date, count, areas, patches[]}], fetch_note}.
+    """
+    clone = os.path.expanduser(clone_dir or "")
+    if not clone or not (Path(clone) / ".git").exists():
+        return {"ok": False, "error": f"Lustre clone not found at '{clone_dir}'. "
+                "Set 'lustre_clone' in config.local.json."}
+
+    ref = f"origin/{gerrit_branch}"
+    fetch_note = None
+    if fetch:
+        try:
+            fr = _git(clone, ["fetch", "--quiet", "--tags", "origin", gerrit_branch])
+            if fr.returncode != 0:
+                tail = (fr.stderr or "").strip().splitlines()
+                fetch_note = tail[-1] if tail else "git fetch failed; using local clone state"
+        except subprocess.TimeoutExpired:
+            fetch_note = "git fetch timed out; using local clone state"
+
+    if _git(clone, ["rev-parse", "--verify", "--quiet", ref]).returncode != 0:
+        return {"ok": False, "error": f"'{ref}' not found in {clone}", "fetch_note": fetch_note}
+
+    tags = [t for t in _git(clone, ["tag", "--merged", ref, "--sort=-creatordate"]).stdout.splitlines()
+            if t.strip()]
+    if not tags:
+        return {"ok": False, "error": f"no tags reachable from {ref}", "fetch_note": fetch_note}
+
+    def _tag_date(t: str) -> str:
+        return _git(clone, ["log", "-1", "--format=%cI", t + "^{commit}"]).stdout.strip()[:10]
+
+    latest = tags[0]
+    unreleased = _commits(clone, f"{latest}..{ref}")
+    builds = []
+    for i, tag in enumerate(tags[:max_builds]):
+        prev = tags[i + 1] if i + 1 < len(tags) else None
+        patches = _commits(clone, f"{prev}..{tag}" if prev else tag)
+        builds.append({"tag": tag, "prev": prev, "date": _tag_date(tag),
+                       "count": len(patches), "areas": _areas(patches), "patches": patches})
+
+    return {"ok": True, "branch": gerrit_branch, "latest_tag": latest,
+            "latest_date": _tag_date(latest), "unreleased": unreleased,
+            "unreleased_count": len(unreleased), "unreleased_areas": _areas(unreleased),
+            "builds": builds, "fetch_note": fetch_note}

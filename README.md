@@ -102,6 +102,31 @@ Logs are written to `~/Library/Logs/com.ddn.lustre-reporter.*.log`. Override the
 port with `LUSTRE_REPORTER_PORT` (default 9835) — don't run the daemon and
 `run.sh` on the same port simultaneously.
 
+## Confluence publishing (QA changelog)
+
+The Landed report publishes a **per-branch QA changelog** to Confluence — one
+page per branch in the target folder. For each *build* (tag) it shows:
+
+- **In build `<tag>` — test this**: what that build added vs the previous build
+  (`prev_tag..tag`). Always populated, even right after a tag is cut — which is
+  exactly what QA needs to plan tests for that build.
+- **Coming next**: merged since the latest tag (`tag..HEAD`), not yet in a build.
+- **Earlier builds**: collapsed history.
+
+Each section has an **"Areas touched"** subsystem summary (e.g.
+`kernel ×3 · pcc ×2 · tests ×4 · lnet ×1`) so QA can pick which suites to run,
+with linked tickets (Jira, correct host) and patches (Gerrit).
+
+- **Automatic:** as the daemon, it republishes at **00:00 and 12:00
+  America/Los_Angeles** (DST-correct via `zoneinfo`).
+- **Manual:** the **Publish to Confluence** button on the Landed tab, or
+  `python3 -m lustre_reporter --publish-now`.
+
+Configure under `confluence` in `config.local.json` (`enabled`, `space_id`,
+`parent_id` = target folder, `title_template`, `max_builds`). Credentials reuse
+the cloud Atlassian token from `~/.jira-tool.json`. Set `confluence.enabled` to
+`false` to disable.
+
 ## Enabling the build-stability report (Maloo)
 
 The stability tab reads nightly CI results from Maloo
