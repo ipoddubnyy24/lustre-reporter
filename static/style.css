@@ -220,6 +220,12 @@ input[type=date] { font-family: var(--font); font-size: 14px; background: var(--
 .chip.primary { background: var(--md-primary-container); color: var(--md-on-primary-container); }
 .chip.tertiary { background: var(--md-tertiary-container); color: var(--md-on-tertiary-container); }
 .chip.outline { background: transparent; border: 1px solid var(--md-outline-variant); color: var(--md-on-surface-variant); }
+.chip.branch-toggle { cursor: pointer; user-select: none; transition: opacity .12s, filter .12s; }
+.chip.branch-toggle.outline { opacity: .5; }
+.chip.branch-toggle:hover { opacity: 1; filter: brightness(1.06); }
+.chip.branch-toggle:focus-visible { outline: 2px solid var(--md-primary); outline-offset: 2px; }
+
+.branch-heading { display: flex; align-items: center; gap: 10px; margin: 26px 0 12px; font-size: 15px; font-weight: 600; color: var(--md-on-surface); }
 
 /* ---------- tables ---------- */
 .scroll-x { overflow-x: auto; border-radius: var(--r-sm); }
