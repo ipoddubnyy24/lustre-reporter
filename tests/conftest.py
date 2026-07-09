@@ -7,8 +7,19 @@ import pytest
 # Belt-and-suspenders: make the package importable even without pyproject pythonpath.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from lustre_reporter import config as cfgmod  # noqa: E402
 from lustre_reporter.cli import ToolResult  # noqa: E402
 from lustre_reporter.config import Config  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _isolate_config(monkeypatch, tmp_path):
+    """Keep the suite hermetic: never read a developer's real config.local.json
+    (which may carry live credentials, e.g. a Slack webhook). Tests that want a
+    config file set LUSTRE_REPORTER_CONFIG themselves, overriding this."""
+    monkeypatch.delenv("LUSTRE_REPORTER_CONFIG", raising=False)
+    monkeypatch.setattr(cfgmod, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cfgmod, "APP_SUPPORT", tmp_path / "app-support")
 
 
 @pytest.fixture
