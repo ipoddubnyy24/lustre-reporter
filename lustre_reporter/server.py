@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .analysis import backport, stability
 from .config import Config
-from .sources import gerrit, jira, maloo, teams
+from .sources import gerrit, git_tags, jira, maloo, teams
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 _MIME = {
@@ -141,12 +141,26 @@ def _attach_ticket_urls(cfg: Config, tickets: list[dict]) -> None:
 
 
 def api_landed(cfg: Config, qs: dict) -> dict:
+    mode = qs.get("mode", ["days"])[0]
     days = _int(qs, "days", 7)
     branches = []
     for b in cfg.branches:
-        res = gerrit.merged_last_days(b.gerrit_project, b.gerrit_branch, days, limit=300)
         entry = {"key": b.key, "label": b.label, "gerrit_branch": b.gerrit_branch,
                  "gerrit_project": b.gerrit_project}
+        if mode == "tag":
+            tg = git_tags.last_tag(cfg.lustre_clone, b.gerrit_branch)
+            if not tg.get("ok"):
+                entry.update({"ok": False, "kind": "error", "error": tg.get("error"),
+                              "count": 0, "patches": []})
+                branches.append(entry)
+                continue
+            entry["tag"] = tg["tag"]
+            entry["tag_date"] = tg["date"]
+            if tg.get("fetch_note"):
+                entry["fetch_note"] = tg["fetch_note"]
+            res = gerrit.merged_since(b.gerrit_project, b.gerrit_branch, tg["date"], limit=500)
+        else:
+            res = gerrit.merged_last_days(b.gerrit_project, b.gerrit_branch, days, limit=300)
         if res.ok:
             for p in res.data:
                 _attach_ticket_urls(cfg, p.get("tickets", []))
@@ -155,7 +169,7 @@ def api_landed(cfg: Config, qs: dict) -> dict:
             entry.update({"ok": False, "kind": res.kind, "error": res.error,
                           "count": 0, "patches": []})
         branches.append(entry)
-    return {"days": days, "branches": branches}
+    return {"mode": mode, "days": days, "branches": branches}
 
 
 def api_backports(cfg: Config, qs: dict) -> dict:

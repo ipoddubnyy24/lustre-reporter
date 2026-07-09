@@ -3,6 +3,7 @@
   "host": "localhost",
   "port": 9835,
   "backport_scan_days": 120,
+  "lustre_clone": "~/work/src/lustre/lustre-release",
   "gerrit_web_base": "https://review.whamcloud.com",
   "jira_lu_base": "https://jira.whamcloud.com/browse",
   "jira_cloud_base": "https://ime-ddn.atlassian.net/browse",

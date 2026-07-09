@@ -108,6 +108,9 @@ class Config:
     # installed .app keep certs in a writable location outside the bundle.
     cert_dir: str = field(default_factory=lambda: (
         os.environ.get("LUSTRE_REPORTER_CERT_DIR") or str(REPO_ROOT / "certs")))
+    # Local ex/lustre-release checkout, used to resolve each branch's most
+    # recent release tag for the "since last tag" landed filter.
+    lustre_clone: str = "~/work/src/lustre/lustre-release"
 
     def branch(self, key: str) -> Branch:
         for b in self.branches:
@@ -131,7 +134,7 @@ def _apply_overrides(cfg: Config, data: dict[str, Any]) -> None:
     """Shallow-merge simple scalar overrides; rebuild list-of-dataclass fields."""
     for key in ("host", "port", "gerrit_web_base", "jira_lu_base",
                 "jira_cloud_base", "backport_scan_days", "enrich_limit",
-                "cert_dir"):
+                "cert_dir", "lustre_clone"):
         if key in data:
             setattr(cfg, key, data[key])
     if "cloud_projects" in data:

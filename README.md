@@ -122,7 +122,9 @@ are provided as fallbacks. Recipients are configurable (see below).
 Everything has a sensible default (baked into `lustre_reporter/config.py`).
 To override, copy `config.example.json` to **`config.local.json`** (git-ignored)
 and edit — branches, master repos to scan, ping recipients, Jira hosts, port,
-and the backport scan window are all adjustable.
+the backport scan window, and `lustre_clone` (your local `ex/lustre-release`
+checkout, used by the Landed **"since last tag"** filter to find each branch's
+latest release tag) are all adjustable.
 
 ## API
 

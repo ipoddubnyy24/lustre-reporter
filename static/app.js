@@ -65,7 +65,7 @@ const S = {
   tab: "stability",
   selected: [],            // branch keys shown across all reports (top-bar chips)
   stability: { days: 30, custom: false, from: "", to: "" },
-  landed: { days: 7 },
+  landed: { days: 7, mode: "days" },
   backports: { days: 120, onlyGaps: true },
 };
 // stability/topfail are keyed by branch (one section per selected branch)
@@ -286,15 +286,24 @@ function drawTrend(trend) {
 //  LANDED
 // =====================================================================
 function landedControls() {
+  const sel = el("select", {
+    onchange: (e) => {
+      const v = e.target.value;
+      if (v === "tag") S.landed.mode = "tag";
+      else { S.landed.mode = "days"; S.landed.days = +v; }
+      loadLanded(false);
+    },
+  },
+    ...[7, 14, 30].map((d) => el("option", { value: d, selected: S.landed.mode === "days" && S.landed.days === d ? "" : null }, "Last " + d + " days")),
+    el("option", { value: "tag", selected: S.landed.mode === "tag" ? "" : null }, "Since last tag"));
   return el("div", { class: "controls" },
-    el("div", { class: "field" }, el("label", {}, "Window"),
-      el("select", { onchange: (e) => { S.landed.days = +e.target.value; loadLanded(false); } },
-        ...[7, 14, 30].map((d) => el("option", { value: d, selected: S.landed.days === d ? "" : null }, "Last " + d + " days")))),
-    el("span", { class: "muted small", style: "align-self:flex-end" }, "Patches merged to each ExaScaler branch."));
+    el("div", { class: "field" }, el("label", {}, "Window"), sel),
+    el("span", { class: "muted small", style: "align-self:flex-end" },
+      S.landed.mode === "tag" ? "Patches merged to each branch since its latest release tag." : "Patches merged to each ExaScaler branch."));
 }
 async function loadLanded(refresh) {
   LOADING.landed = true; renderLanded();
-  try { DATA.landed = await api("/api/landed", { days: S.landed.days }, refresh); }
+  try { DATA.landed = await api("/api/landed", { mode: S.landed.mode, days: S.landed.days }, refresh); }
   catch (e) { DATA.landed = { branches: [], error: String(e) }; }
   LOADING.landed = false; renderLanded();
 }
@@ -304,11 +313,16 @@ function renderLanded() {
   if (LOADING.landed || !DATA.landed) { out.push(el("div", { class: "card" }, spinnerBox("Querying Gerrit…"))); root.replaceChildren(...out); return; }
   const shown = DATA.landed.branches.filter((b) => isSelected(b.key));
   setBadge("landed", shown.reduce((a, b) => a + (b.count || 0), 0));
+  const tagMode = DATA.landed.mode === "tag";
   for (const b of shown) {
-    const card = el("div", { class: "card" }, el("h2", {}, b.label, "  ", el("span", { class: "chip primary" }, b.gerrit_branch),
-      "  ", el("span", { class: "muted small" }, b.ok ? b.count + " merged in " + DATA.landed.days + "d" : "")));
-    if (!b.ok) { card.append(sourceBanner(b, "gerrit")); out.push(card); continue; }
-    if (!b.count) { card.append(el("div", { class: "empty" }, "Nothing merged in this window.")); out.push(card); continue; }
+    const head = el("h2", {}, b.label, "  ", el("span", { class: "chip primary" }, b.gerrit_branch));
+    if (tagMode && b.tag) head.append(" ", el("span", { class: "chip tertiary", title: "latest tag" + (b.tag_date ? " · " + b.tag_date : "") }, b.tag));
+    const meta = !b.ok ? "" : (tagMode ? b.count + " since tag" : b.count + " merged in " + DATA.landed.days + "d");
+    head.append("  ", el("span", { class: "muted small" }, meta));
+    const card = el("div", { class: "card" }, head);
+    if (b.fetch_note) card.append(el("div", { class: "muted small", style: "margin-bottom:8px" }, "⚠ " + b.fetch_note));
+    if (!b.ok) { card.append(sourceBanner(b, tagMode ? "git" : "gerrit")); out.push(card); continue; }
+    if (!b.count) { card.append(el("div", { class: "empty" }, tagMode ? "Nothing merged since " + (b.tag || "the last tag") + "." : "Nothing merged in this window.")); out.push(card); continue; }
     const rows = b.patches.map((p) => el("tr", {},
       el("td", {}, el("a", { href: p.url, target: "_blank", class: "mono" }, "#" + p.number)),
       el("td", {}, ticketLinks(p.tickets)), el("td", { class: "subject" }, stripTicket(p.subject)),
