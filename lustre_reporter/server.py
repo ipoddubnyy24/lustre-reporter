@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import publish
+from . import daily_report, publish
 from .analysis import backport, stability
 from .config import Config
 from .sources import gerrit, git_tags, jira, maloo, teams
@@ -238,6 +238,11 @@ def api_publish(cfg: Config, qs: dict) -> dict:
     return publish.publish_all(cfg)
 
 
+def api_slack_report(cfg: Config, qs: dict) -> dict:
+    """Build + send the daily build-health report to Slack now."""
+    return daily_report.send_daily(cfg)
+
+
 # Endpoints that are safe/beneficial to cache, with their TTLs (seconds).
 _CACHED = {
     "/api/stability": 300,
@@ -257,6 +262,7 @@ _ROUTES = {
     "/api/change": api_change,
     "/api/ping": api_ping,
     "/api/publish": api_publish,
+    "/api/slack-report": api_slack_report,
 }
 
 

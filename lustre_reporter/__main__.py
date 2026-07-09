@@ -95,6 +95,34 @@ def _start_confluence_scheduler(cfg) -> None:
           flush=True)
 
 
+def _start_slack_scheduler(cfg) -> None:
+    """Background thread posting the daily build-health report at slack.hour Pacific."""
+    from .sources import slack
+    slack_cfg = getattr(cfg, "slack", None) or {}
+    if not slack.configured(slack_cfg):
+        return
+    import threading
+    import time
+    from . import daily_report
+
+    hour = int(slack_cfg.get("hour", 9))
+
+    def loop() -> None:  # pragma: no cover - infinite background scheduler loop
+        while True:
+            now = daily_report.now_pt()
+            time.sleep(max((daily_report.next_run_pt(hour, now) - now).total_seconds(), 1))
+            try:
+                res = daily_report.send_daily(cfg)
+                print(f"[slack] daily report {daily_report.now_pt():%Y-%m-%d %H:%M %Z}: "
+                      f"{'ok' if res.get('ok') else 'FAILED ' + str(res.get('error'))}", flush=True)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+
+    threading.Thread(target=loop, name="slack-daily-report", daemon=True).start()
+    print(f"  Slack daily report ON → next {daily_report.next_run_pt(hour):%Y-%m-%d %H:%M} PT",
+          flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     cfg = load_config()
     parser = argparse.ArgumentParser(
@@ -110,6 +138,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="open the dashboard in a browser on start")
     parser.add_argument("--publish-now", action="store_true",
                         help="publish the landed-patches changelog to Confluence once, then exit")
+    parser.add_argument("--slack-now", action="store_true",
+                        help="send the daily build-health report to Slack once, then exit")
     args = parser.parse_args(argv)
 
     cfg.host = args.host
@@ -118,6 +148,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.publish_now:
         from . import publish
         res = publish.publish_all(cfg)
+        print(json.dumps(res, indent=2))
+        return 0 if res.get("ok") else 1
+
+    if args.slack_now:
+        from . import daily_report
+        res = daily_report.send_daily(cfg)
         print(json.dumps(res, indent=2))
         return 0 if res.get("ok") else 1
 
@@ -139,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
         import webbrowser
         webbrowser.open(url)
     _start_confluence_scheduler(cfg)
+    _start_slack_scheduler(cfg)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

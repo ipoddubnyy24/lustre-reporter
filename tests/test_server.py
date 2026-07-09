@@ -179,6 +179,11 @@ def test_api_publish(monkeypatch, cfg):
     assert server.api_publish(cfg, {}) == {"ok": True, "results": []}
 
 
+def test_api_slack_report(monkeypatch, cfg):
+    monkeypatch.setattr(server.daily_report, "send_daily", lambda c: {"ok": True, "date": "d"})
+    assert server.api_slack_report(cfg, {}) == {"ok": True, "date": "d"}
+
+
 # ---------------- live HTTP integration (Handler / routing / cache / static) ----------------
 @contextlib.contextmanager
 def _running(cfg):

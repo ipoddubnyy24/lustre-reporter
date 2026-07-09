@@ -18,6 +18,15 @@
     "title_template": "ExaScaler Landed Patches — {label} ({gerrit_branch})",
     "max_builds": 5
   },
+  "slack": {
+    "_comment": "Daily build-health report posted at `hour` America/Los_Angeles. Provide webhook_url (Incoming Webhook) OR bot_token+channel (chat:write). enabled=false keeps it off.",
+    "enabled": false,
+    "webhook_url": "",
+    "bot_token": "",
+    "channel": "",
+    "hour": 9,
+    "days": 14
+  },
   "gerrit_web_base": "https://review.whamcloud.com",
   "jira_lu_base": "https://jira.whamcloud.com/browse",
   "jira_cloud_base": "https://ime-ddn.atlassian.net/browse",

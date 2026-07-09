@@ -67,6 +67,23 @@ def test_scheduler_enabled_starts_thread(monkeypatch, cfg):
     assert any(t.name == "confluence-scheduler" for t in threading.enumerate())
 
 
+# ---------------- slack scheduler ----------------
+def test_slack_scheduler_disabled(cfg):
+    cfg.slack = {"enabled": False}
+    before = threading.active_count()
+    assert main_mod._start_slack_scheduler(cfg) is None
+    assert threading.active_count() == before
+
+
+def test_slack_scheduler_enabled_starts_thread(monkeypatch, cfg):
+    cfg.slack = {"enabled": True, "webhook_url": "http://hook", "hour": 9}
+    import lustre_reporter.daily_report as dr
+    monkeypatch.setattr(dr, "now_pt", lambda: datetime(2026, 1, 1))
+    monkeypatch.setattr(dr, "next_run_pt", lambda hour, now=None: datetime(2100, 1, 1))
+    main_mod._start_slack_scheduler(cfg)
+    assert any(t.name == "slack-daily-report" for t in threading.enumerate())
+
+
 # ---------------- main() ----------------
 def test_main_publish_now_ok(monkeypatch):
     monkeypatch.setattr(pub, "publish_all", lambda c: {"ok": True})
@@ -76,6 +93,18 @@ def test_main_publish_now_ok(monkeypatch):
 def test_main_publish_now_fail(monkeypatch):
     monkeypatch.setattr(pub, "publish_all", lambda c: {"ok": False, "error": "x"})
     assert main_mod.main(["--publish-now"]) == 1
+
+
+def test_main_slack_now_ok(monkeypatch):
+    import lustre_reporter.daily_report as dr
+    monkeypatch.setattr(dr, "send_daily", lambda c: {"ok": True})
+    assert main_mod.main(["--slack-now"]) == 0
+
+
+def test_main_slack_now_fail(monkeypatch):
+    import lustre_reporter.daily_report as dr
+    monkeypatch.setattr(dr, "send_daily", lambda c: {"ok": False, "error": "x"})
+    assert main_mod.main(["--slack-now"]) == 1
 
 
 class _FakeCtx:
@@ -103,6 +132,7 @@ def _patch_serve(monkeypatch, httpd):
     monkeypatch.setattr(main_mod.ssl, "SSLContext", lambda proto: _FakeCtx())
     monkeypatch.setattr(main_mod, "make_server", lambda cfg, cache_ttl=300: httpd)
     monkeypatch.setattr(main_mod, "_start_confluence_scheduler", lambda cfg: None)
+    monkeypatch.setattr(main_mod, "_start_slack_scheduler", lambda cfg: None)
 
 
 def test_main_serves_and_shuts_down(monkeypatch):

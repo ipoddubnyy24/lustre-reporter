@@ -133,6 +133,17 @@ class Config:
         "max_builds": 5,
     })
 
+    # Daily Slack report (build-stability trend + landed-since-last-tag), posted
+    # at slack.hour America/Los_Angeles. Provide a webhook_url, or bot_token+channel.
+    slack: dict = field(default_factory=lambda: {
+        "enabled": False,
+        "webhook_url": "",
+        "bot_token": "",
+        "channel": "",
+        "hour": 9,
+        "days": 14,
+    })
+
     def branch(self, key: str) -> Branch:
         for b in self.branches:
             if b.key == key:
@@ -171,6 +182,8 @@ def _apply_overrides(cfg: Config, data: dict[str, Any]) -> None:
         cfg.git_fetch.update(data["git_fetch"])
     if isinstance(data.get("confluence"), dict):
         cfg.confluence.update(data["confluence"])
+    if isinstance(data.get("slack"), dict):
+        cfg.slack.update(data["slack"])
 
 
 def _config_candidates() -> list[Path]:

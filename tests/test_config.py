@@ -47,6 +47,7 @@ def test_load_config_overrides(monkeypatch, tmp_path):
         "masters": [{"key": "m", "label": "M", "gerrit_project": "pm"}],
         "git_fetch": {"use_origin": False, "remotes": ["gh://{branch}"]},
         "confluence": {"enabled": False},
+        "slack": {"enabled": True, "webhook_url": "http://hook"},
     }))
     monkeypatch.setenv("LUSTRE_REPORTER_CONFIG", str(p))
     c = load_config()
@@ -58,6 +59,8 @@ def test_load_config_overrides(monkeypatch, tmp_path):
     assert c.git_fetch["use_origin"] is False and c.git_fetch["use_gerrit_https"] is True
     assert c.git_fetch["remotes"] == ["gh://{branch}"]
     assert c.confluence["enabled"] is False and c.confluence["space_id"] == "1075183618"
+    assert c.slack["enabled"] is True and c.slack["webhook_url"] == "http://hook"
+    assert c.slack["hour"] == 9  # unspecified key keeps default
 
 
 def test_load_config_invalid_json(monkeypatch, tmp_path):

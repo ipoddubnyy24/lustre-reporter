@@ -127,6 +127,33 @@ Configure under `confluence` in `config.local.json` (`enabled`, `space_id`,
 the cloud Atlassian token from `~/.jira-tool.json`. Set `confluence.enabled` to
 `false` to disable.
 
+## Daily Slack report
+
+The daemon can post a **daily build-health report to Slack** — per branch, the
+build-stability numbers **plus the last-7-days clean-rate trend** (e.g.
+`57.1% → 43.8% → 37.5%  ↘`) and the **patches landed since the last tag only**
+(each with its ticket and Gerrit links; "nothing yet" right after a tag is cut).
+
+- **Automatic:** as the daemon, it posts once a day at **09:00
+  America/Los_Angeles** (DST-correct via `zoneinfo`; change the hour with
+  `slack.hour`).
+- **Manual:** `python3 -m lustre_reporter --slack-now` (also the
+  `GET /api/slack-report` endpoint).
+
+Configure under `slack` in `config.local.json`. Provide **either** an
+[Incoming Webhook](https://api.slack.com/messaging/webhooks) URL **or** a bot
+token (`chat:write`) plus a `channel`:
+
+```json
+"slack": { "enabled": true, "webhook_url": "https://hooks.slack.com/services/…" }
+```
+```json
+"slack": { "enabled": true, "bot_token": "xoxb-…", "channel": "#lustre-builds" }
+```
+
+Then `./scripts/lustre_reporter_daemon.sh restart` to pick up the schedule. Set
+`slack.enabled` to `false` (the default) to disable.
+
 ## Enabling the build-stability report (Maloo)
 
 The stability tab reads nightly CI results from Maloo
@@ -184,6 +211,8 @@ The UI is served from `static/` and calls these JSON endpoints (all `GET`;
 | `/api/ticket?key=LU-20388` | One ticket (routed to the right Jira) |
 | `/api/change?url=…` | One Gerrit change's Verified/CI state |
 | `/api/ping?branch=es6&subject=…&url=…&ticket=LU-1` | Draft + Teams/mailto links |
+| `/api/publish` | Push the QA changelog to Confluence now |
+| `/api/slack-report` | Post the daily build-health report to Slack now |
 
 ## Tests
 
@@ -192,7 +221,7 @@ The UI is served from `static/` and calls these JSON endpoints (all `GET`;
 ```
 
 Unit tests live in `tests/` (pytest). Every external interaction — the
-`llm_jira` CLIs, `git`, and Confluence/HTTP — is mocked, so the suite is
+`llm_jira` CLIs, `git`, and Confluence/Slack/HTTP — is mocked, so the suite is
 hermetic and fast (no network, no real repos). Coverage is enforced at **100%**
 (statements **and** branches) via `pyproject.toml` (`fail_under = 100`).
 
