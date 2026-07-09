@@ -83,14 +83,24 @@ Login Items**, so add **Lustre Reporter** there to launch at login (bundle id
   `~/Library/Application Support/Lustre Reporter/` — the app bundle stays
   read-only. (Overridable with `LUSTRE_REPORTER_CERT_DIR` / `LUSTRE_REPORTER_CONFIG`.)
 
-Prefer a headless launchd service instead? Use the agent template — identifiable
-in `launchctl list` and Login Items by the label `com.ddn.lustre-reporter`:
+### Run as a background service (daemon)
+
+For a headless launchd service (no Dock icon, survives crashes, autostarts at
+login), use the control script — a per-user LaunchAgent labeled
+`com.ddn.lustre-reporter`:
 
 ```bash
-sed "s#__REPO_DIR__#$HOME/work/src/lustre_reporter#g" \
-  scripts/com.ddn.lustre-reporter.plist > ~/Library/LaunchAgents/com.ddn.lustre-reporter.plist
-launchctl load ~/Library/LaunchAgents/com.ddn.lustre-reporter.plist
+./scripts/daemon.sh start       # install + run (also starts at login)
+./scripts/daemon.sh status      # loaded? PID? last exit? port listening?
+./scripts/daemon.sh restart
+./scripts/daemon.sh stop         # stop now (agent stays; returns at next login)
+./scripts/daemon.sh uninstall    # stop + remove the agent (disables autostart)
+./scripts/daemon.sh logs [N]     # tail stdout/stderr
 ```
+
+Logs are written to `~/Library/Logs/com.ddn.lustre-reporter.*.log`. Override the
+port with `LUSTRE_REPORTER_PORT` (default 9835) — don't run the daemon and
+`run.sh` on the same port simultaneously.
 
 ## Enabling the build-stability report (Maloo)
 
