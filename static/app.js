@@ -1,7 +1,7 @@
 "use strict";
-/* Lustre Reporter — vanilla JS SPA. No external dependencies. */
+/* Lustre Reporter — Material UI SPA. Eager-loads every report on open. */
 
-// ---------- tiny DOM helpers ----------
+// ---------- DOM helpers ----------
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
@@ -21,7 +21,28 @@ function el(tag, attrs, ...kids) {
   }
   return n;
 }
+function icon(name) {
+  const t = document.createElement("template");
+  t.innerHTML = (window.ICONS && window.ICONS[name]) || "";
+  return t.content.firstChild;
+}
+const fmtDate = (s, withTime) => {
+  if (!s) return "—";
+  const str = String(s);
+  return withTime ? str.slice(0, 16).replace("T", " ") : str.slice(0, 10);
+};
+const spinnerBox = (txt) => el("div", { class: "loading" }, el("span", { class: "spinner" }), txt || "Loading…");
+const stripTicket = (s) => (s || "").replace(/^((?:LU|EX|DDN|EHT|GCP|IME)-\d+\s+)+/i, "");
 
+// ---------- progress plumbing ----------
+let inflight = 0;
+function bump(delta) {
+  inflight = Math.max(0, inflight + delta);
+  const busy = inflight > 0;
+  $("#progress").classList.toggle("hidden", !busy);
+  $("#refresh").classList.toggle("spinning", busy);
+  $("#fab").classList.toggle("spinning", busy);
+}
 async function api(path, params, refresh) {
   const u = new URL(path, location.origin);
   if (params) for (const [k, v] of Object.entries(params)) {
@@ -30,67 +51,51 @@ async function api(path, params, refresh) {
     else u.searchParams.set(k, v);
   }
   if (refresh) u.searchParams.set("refresh", "1");
-  const r = await fetch(u.toString());
-  if (!r.ok) throw new Error("HTTP " + r.status + " for " + path);
-  return r.json();
+  bump(1);
+  try {
+    const r = await fetch(u.toString());
+    if (!r.ok) throw new Error("HTTP " + r.status + " for " + path);
+    return await r.json();
+  } finally { bump(-1); }
 }
-
-const fmtDate = (s, withTime) => {
-  if (!s) return "—";
-  const str = String(s);
-  return withTime ? str.slice(0, 16).replace("T", " ") : str.slice(0, 10);
-};
-const loading = (txt) => el("div", { class: "loading" }, el("span", { class: "spinner" }), " " + (txt || "Loading…"));
 
 // ---------- state ----------
 let CFG = null;
 const S = {
   tab: "stability",
-  stability: { branch: "es6", days: 30, from: "", to: "", failuresLoaded: false },
+  stability: { branch: "es6", days: 30, custom: false, from: "", to: "" },
   landed: { days: 7 },
   backports: { days: 120, onlyGaps: true },
 };
+const DATA = { stability: null, topfail: null, landed: null, backports: null };
+const LOADING = { stability: false, topfail: false, landed: false, backports: false };
+let autoTimer = null;
 
-// ---------- source-error banner ----------
-function sourceBanner(res, tool) {
-  const kind = res.kind || "error";
-  const cls = kind === "error" ? "error" : "auth";
-  const box = el("div", { class: "banner " + cls });
-  if (tool === "maloo" && kind === "auth") {
-    box.append(
-      el("h3", {}, "Maloo credentials rejected (HTTP 401)"),
-      el("div", {}, "The stability report reads nightly CI results from Maloo (testing.whamcloud.com). The current credentials were rejected. To fix:"),
-      el("pre", {}, "edit ~/.config/maloo-tool/.env\n  MALOO_USER=<your testing.whamcloud.com login>\n  MALOO_PASS=<your testing.whamcloud.com password>\nthen click ↻ Refresh"),
-      el("div", { class: "small muted" }, res.error || ""),
-    );
-  } else if (kind === "missing") {
-    box.append(
-      el("h3", {}, "Tool not installed"),
-      el("div", {}, res.error || ("The '" + tool + "' CLI was not found on PATH.")),
-      el("pre", {}, "cd ~/work/src/llm_jira && ./install.sh"),
-    );
-  } else {
-    box.append(
-      el("h3", {}, (tool || "Source") + " error"),
-      el("div", { class: "small mono" }, res.error || "unknown error"),
-    );
-  }
-  return box;
+// ---------- snackbar ----------
+let snackTimer;
+function snack(msg) {
+  const s = $("#snackbar");
+  s.textContent = msg;
+  s.classList.add("show");
+  clearTimeout(snackTimer);
+  snackTimer = setTimeout(() => s.classList.remove("show"), 2800);
+}
+function markUpdated() {
+  $("#updated").textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// ---------- status chips ----------
+// ---------- shared bits ----------
 function statusChip(state) {
-  if (state === "ported") return el("span", { class: "chip good" }, "✓ ported");
-  if (state === "ticket_only") return el("span", { class: "chip warn", title: "Ticket exists on this branch, but this patch's subject was not found — a companion patch may have been missed." }, "⚠ ticket only");
-  return el("span", { class: "chip bad" }, "✗ missing");
+  if (state === "ported") return el("span", { class: "chip good" }, icon("check"), "Ported");
+  if (state === "ticket_only")
+    return el("span", { class: "chip warn", title: "Ticket is on this branch, but this patch's subject was not found — a companion patch may have been missed." }, icon("warning"), "Ticket only");
+  return el("span", { class: "chip bad" }, icon("error"), "Missing");
 }
-
 function changeLink(c) {
   if (!c || !c.url) return null;
   return el("a", { href: c.url, target: "_blank", class: "mono", title: c.subject || "" },
     "#" + c.number + (c.status && c.status !== "MERGED" ? " (" + c.status.toLowerCase() + ")" : ""));
 }
-
 function ticketLinks(tickets) {
   const wrap = el("span");
   (tickets || []).forEach((t, i) => {
@@ -100,209 +105,205 @@ function ticketLinks(tickets) {
   if (!(tickets || []).length) wrap.append(el("span", { class: "muted" }, "—"));
   return wrap;
 }
+function sourceBanner(res, tool) {
+  const kind = res.kind || "error";
+  const box = el("div", { class: "banner " + (kind === "error" ? "error" : "warn") },
+    el("span", { class: "i-wrap" }, icon(kind === "error" ? "error" : "warning")));
+  const body = el("div");
+  if (tool === "maloo" && kind === "auth") {
+    body.append(
+      el("h3", {}, "Maloo credentials rejected (HTTP 401)"),
+      el("div", {}, "The stability report reads nightly CI results from Maloo (testing.whamcloud.com). Add a working login and refresh:"),
+      el("pre", {}, "edit ~/.config/maloo-tool/.env\n  MALOO_USER=<your testing.whamcloud.com login>\n  MALOO_PASS=<your testing.whamcloud.com password>"),
+      el("div", { class: "small", style: "margin-top:8px;opacity:.85" }, res.error || ""));
+  } else if (kind === "missing") {
+    body.append(el("h3", {}, "Tool not installed"), el("div", {}, res.error || ""),
+      el("pre", {}, "cd ~/work/src/llm_jira && ./install.sh"));
+  } else {
+    body.append(el("h3", {}, (tool || "Source") + " error"), el("div", { class: "small mono" }, res.error || "unknown error"));
+  }
+  box.append(body);
+  return box;
+}
 
 // =====================================================================
-//  TAB 1 — BUILD STABILITY
+//  STABILITY
 // =====================================================================
 function stabilityControls() {
   const st = S.stability;
-  const branchSel = el("select", { onchange: (e) => { st.branch = e.target.value; st.failuresLoaded = false; renderStability(); } },
-    ...CFG.branches.map((b) => el("option", { value: b.key, selected: b.key === st.branch ? "" : null }, b.label + " (" + b.gerrit_branch + ")")));
+  const branchSel = el("select", {
+    onchange: (e) => { st.branch = e.target.value; loadStability(false); },
+  }, ...CFG.branches.map((b) => el("option", { value: b.key, selected: b.key === st.branch ? "" : null }, b.label + " (" + b.gerrit_branch + ")")));
 
   const presets = [7, 14, 30, 60, 90];
   const rangeSel = el("select", {
     onchange: (e) => {
       const v = e.target.value;
-      if (v === "custom") { st.custom = true; } else { st.custom = false; st.days = +v; st.from = ""; st.to = ""; }
+      if (v === "custom") st.custom = true;
+      else { st.custom = false; st.days = +v; st.from = ""; st.to = ""; loadStability(false); }
       renderStability();
     },
-  },
-    ...presets.map((d) => el("option", { value: d, selected: !st.custom && st.days === d ? "" : null }, "last " + d + " days")),
-    el("option", { value: "custom", selected: st.custom ? "" : null }, "custom range…"));
+  }, ...presets.map((d) => el("option", { value: d, selected: !st.custom && st.days === d ? "" : null }, "Last " + d + " days")),
+    el("option", { value: "custom", selected: st.custom ? "" : null }, "Custom range…"));
 
   const row = el("div", { class: "controls" },
-    el("div", { class: "group" }, el("label", {}, "Branch"), branchSel),
-    el("div", { class: "group" }, el("label", {}, "Period"), rangeSel));
+    el("div", { class: "field" }, el("label", {}, "Branch"), branchSel),
+    el("div", { class: "field" }, el("label", {}, "Period"), rangeSel));
 
   if (st.custom) {
     const from = el("input", { type: "date", value: st.from || "", max: CFG.today, onchange: (e) => { st.from = e.target.value; } });
     const to = el("input", { type: "date", value: st.to || CFG.today, max: CFG.today, onchange: (e) => { st.to = e.target.value; } });
     row.append(
-      el("div", { class: "group" }, el("label", {}, "From"), from),
-      el("div", { class: "group" }, el("label", {}, "To"), to),
-      el("button", { class: "btn accent sm", onclick: () => renderStability() }, "Apply"));
+      el("div", { class: "field" }, el("label", {}, "From"), from),
+      el("div", { class: "field" }, el("label", {}, "To"), to),
+      el("button", { class: "btn filled sm", style: "align-self:flex-end", onclick: () => loadStability(false) }, "Apply"));
   }
   return row;
 }
 
-async function renderStability(refresh) {
-  const root = $("#tab-stability");
+async function loadStability(refresh) {
   const st = S.stability;
-  root.replaceChildren(stabilityControls(), loading("Querying Maloo…"));
-  let data;
-  try {
-    const params = { branch: st.branch, days: st.days };
-    if (st.custom && st.from) { params.from = st.from; params.to = st.to || CFG.today; }
-    data = await api("/api/stability", params, refresh);
-  } catch (e) {
-    root.replaceChildren(stabilityControls(), el("div", { class: "banner error" }, String(e)));
-    return;
-  }
+  LOADING.stability = true; DATA.stability = null; DATA.topfail = null; LOADING.topfail = true;
+  renderStability();
+  const params = { branch: st.branch, days: st.days };
+  if (st.custom && st.from) { params.from = st.from; params.to = st.to || CFG.today; }
+  try { DATA.stability = await api("/api/stability", params, refresh); }
+  catch (e) { DATA.stability = { ok: false, kind: "error", error: String(e) }; }
+  LOADING.stability = false;
+  renderStability();
+  // top failures load independently (slower)
+  try { DATA.topfail = await api("/api/top-failures", { branch: st.branch, days: st.days }, refresh); }
+  catch (e) { DATA.topfail = { ok: false, kind: "error", error: String(e) }; }
+  LOADING.topfail = false;
+  renderStability();
+}
 
+function renderStability() {
+  const root = $("#tab-stability");
   const out = [stabilityControls()];
+  const data = DATA.stability;
+  if (LOADING.stability || !data) { out.push(el("div", { class: "card" }, spinnerBox("Querying Maloo…"))); root.replaceChildren(...out); return; }
   if (!data.ok) {
     out.push(sourceBanner(data, "maloo"));
-    out.push(el("div", { class: "card muted small" },
-      "Trigger job: ", el("code", {}, data.trigger_job || "?"),
+    out.push(el("div", { class: "card muted small" }, "Trigger job: ", el("code", {}, data.trigger_job || "?"),
       ". Once Maloo authenticates, this tab shows the nightly pass-rate trend, per-day drill-down, and the top failing tests."));
-    root.replaceChildren(...out);
-    return;
+    root.replaceChildren(...out); return;
   }
-
   const sum = data.summary;
-  const rateClass = (r) => r == null ? "" : (r >= 90 ? "good" : r >= 70 ? "warn" : "bad");
-  const tiles = el("div", { class: "tiles" },
-    el("div", { class: "tile " + rateClass(sum.session_pass_rate) }, el("div", { class: "v" }, sum.session_pass_rate == null ? "—" : sum.session_pass_rate + "%"), el("div", { class: "k" }, "clean sessions")),
-    el("div", { class: "tile " + rateClass(sum.testset_pass_rate) }, el("div", { class: "v" }, sum.testset_pass_rate == null ? "—" : sum.testset_pass_rate + "%"), el("div", { class: "k" }, "test-set pass rate")),
-    el("div", { class: "tile" }, el("div", { class: "v" }, sum.sessions), el("div", { class: "k" }, "sessions")),
-    el("div", { class: "tile " + (sum.failed_sessions ? "warn" : "good") }, el("div", { class: "v" }, sum.failed_sessions), el("div", { class: "k" }, "sessions with failures")),
-    el("div", { class: "tile " + (sum.testsets_failed ? "bad" : "good") }, el("div", { class: "v" }, sum.testsets_failed), el("div", { class: "k" }, "test-sets failed")));
-
-  const chartCard = el("div", { class: "card" }, el("h2", {}, "Stability trend — " + data.label),
-    data.trend.length ? drawTrend(data.trend) : el("div", { class: "muted" }, "No sessions in this period."),
+  const rc = (r) => r == null ? "" : (r >= 90 ? "good" : r >= 70 ? "warn" : "bad");
+  out.push(el("div", { class: "card" },
+    el("h2", {}, "Stability — " + data.label),
+    el("div", { class: "card-sub" }, "Period " + (data.from ? data.from + " → " + (data.to || CFG.today) : "last " + data.days + " days")),
+    el("div", { class: "tiles" },
+      tile(rc(sum.session_pass_rate), sum.session_pass_rate == null ? "—" : sum.session_pass_rate + "%", "clean sessions"),
+      tile(rc(sum.testset_pass_rate), sum.testset_pass_rate == null ? "—" : sum.testset_pass_rate + "%", "test-set pass rate"),
+      tile("", sum.sessions, "sessions"),
+      tile(sum.failed_sessions ? "warn" : "good", sum.failed_sessions, "sessions with failures"),
+      tile(sum.testsets_failed ? "bad" : "good", sum.testsets_failed, "test-sets failed"))));
+  out.push(el("div", { class: "card" }, el("h2", {}, "Stability trend"),
+    data.trend.length ? drawTrend(data.trend) : el("div", { class: "empty" }, "No sessions in this period."),
     el("div", { class: "legend" },
-      el("span", {}, el("i", { class: "dot-key", style: "background:var(--accent)" }), "clean-session %"),
-      el("span", {}, el("i", { class: "dot-key", style: "background:var(--muted);opacity:.4" }), "sessions/day")));
-
-  // top failures (lazy — the query is slow)
-  const failCard = el("div", { class: "card" }, el("h2", {}, "Top failing tests"));
-  if (!st.failuresLoaded) {
-    failCard.append(el("button", { class: "btn", onclick: (e) => { st.failuresLoaded = true; loadTopFailures(failCard); } }, "Load top failures (slow — drills into sessions)"));
-  } else {
-    loadTopFailures(failCard);
-  }
-
-  out.push(tiles, chartCard, failCard, sessionsTable(data.sessions));
+      el("span", {}, el("i", { class: "dot-key", style: "background:var(--md-primary)" }), "clean-session %"),
+      el("span", {}, el("i", { class: "dot-key", style: "background:var(--md-on-surface-variant);opacity:.4" }), "sessions/day"))));
+  out.push(failuresCard());
+  out.push(sessionsCard(data.sessions));
   root.replaceChildren(...out);
 }
+const tile = (cls, v, k) => el("div", { class: "tile " + cls }, el("div", { class: "v" }, v), el("div", { class: "k" }, k));
 
-async function loadTopFailures(card) {
-  card.replaceChildren(el("h2", {}, "Top failing tests"), loading("Aggregating failures…"));
-  const st = S.stability;
-  let data;
-  try { data = await api("/api/top-failures", { branch: st.branch, days: st.days }); }
-  catch (e) { card.replaceChildren(el("h2", {}, "Top failing tests"), el("div", { class: "banner error" }, String(e))); return; }
-  if (!data.ok) { card.replaceChildren(el("h2", {}, "Top failing tests"), sourceBanner(data, "maloo")); return; }
-  if (!data.failures.length) { card.replaceChildren(el("h2", {}, "Top failing tests"), el("div", { class: "muted" }, "No failures found. 🎉")); return; }
-  const rows = data.failures.map((f) => el("tr", {},
-    el("td", { class: "num" }, f.rank),
-    el("td", {}, el("span", { class: "mono" }, f.suite || "—")),
-    el("td", { class: "subject" }, f.test_name),
-    el("td", { class: "num" }, f.count),
-    el("td", { class: "num" }, f.session_count),
+function failuresCard() {
+  const card = el("div", { class: "card" }, el("h2", {}, icon("science"), " Top failing tests"));
+  card.firstChild.style.display = "inline-flex"; card.firstChild.style.alignItems = "center"; card.firstChild.style.gap = "8px";
+  const tf = DATA.topfail;
+  if (LOADING.topfail || !tf) { card.append(spinnerBox("Aggregating failures…")); return card; }
+  if (!tf.ok) { card.append(sourceBanner(tf, "maloo")); return card; }
+  if (!tf.failures.length) { card.append(el("div", { class: "empty" }, "No failures found. 🎉")); return card; }
+  const rows = tf.failures.map((f) => el("tr", {},
+    el("td", { class: "num" }, f.rank), el("td", {}, el("span", { class: "mono" }, f.suite || "—")),
+    el("td", { class: "subject" }, f.test_name), el("td", { class: "num" }, f.count), el("td", { class: "num" }, f.session_count),
     el("td", { class: "small muted", title: f.error_sample || "" }, (f.error_sample || "").slice(0, 80))));
-  card.replaceChildren(el("h2", {}, "Top failing tests (" + data.days + "d)"),
-    el("div", { class: "scroll-x" }, el("table", {},
-      el("thead", {}, el("tr", {}, el("th", { class: "num" }, "#"), el("th", {}, "Suite"), el("th", {}, "Test"), el("th", { class: "num" }, "Fails"), el("th", { class: "num" }, "Sessions"), el("th", {}, "Sample error"))),
-      el("tbody", {}, ...rows))));
+  card.append(el("div", { class: "scroll-x" }, el("table", {},
+    el("thead", {}, el("tr", {}, el("th", { class: "num" }, "#"), el("th", {}, "Suite"), el("th", {}, "Test"), el("th", { class: "num" }, "Fails"), el("th", { class: "num" }, "Sessions"), el("th", {}, "Sample error"))),
+    el("tbody", {}, ...rows))));
+  return card;
 }
 
-function sessionsTable(sessions) {
+function sessionsCard(sessions) {
   const card = el("div", { class: "card" }, el("h2", {}, "Sessions (" + sessions.length + ")"));
-  if (!sessions.length) { card.append(el("div", { class: "muted" }, "No sessions.")); return card; }
+  if (!sessions.length) { card.append(el("div", { class: "empty" }, "No sessions.")); return card; }
   const rows = sessions.map((s) => el("tr", {},
-    el("td", {}, s.clean ? el("span", { class: "chip good" }, "clean") : el("span", { class: "chip bad" }, "fail")),
-    el("td", { class: "nowrap" }, fmtDate(s.date, true)),
-    el("td", { class: "mono small" }, s.host || "—"),
-    el("td", {}, s.name || s.group || "—"),
-    el("td", { class: "num" }, s.passed),
-    el("td", { class: "num" }, s.failed),
-    el("td", { class: "num" }, s.aborted),
-    el("td", {}, s.url ? el("a", { href: s.url, target: "_blank" }, "open") : "—")));
+    el("td", {}, s.clean ? el("span", { class: "chip good" }, icon("check"), "clean") : el("span", { class: "chip bad" }, "fail")),
+    el("td", { class: "nowrap" }, fmtDate(s.date, true)), el("td", { class: "mono small" }, s.host || "—"),
+    el("td", {}, s.name || s.group || "—"), el("td", { class: "num" }, s.passed), el("td", { class: "num" }, s.failed),
+    el("td", { class: "num" }, s.aborted), el("td", {}, s.url ? el("a", { href: s.url, target: "_blank" }, "open") : "—")));
   card.append(el("div", { class: "scroll-x" }, el("table", {},
     el("thead", {}, el("tr", {}, el("th", {}, "Result"), el("th", {}, "Submitted"), el("th", {}, "Host"), el("th", {}, "Suite/name"), el("th", { class: "num" }, "Pass"), el("th", { class: "num" }, "Fail"), el("th", { class: "num" }, "Abort"), el("th", {}, "Link"))),
     el("tbody", {}, ...rows))));
   return card;
 }
 
-// SVG trend: clean-session % line + faint per-day session bars.
 function drawTrend(trend) {
-  const W = 760, H = 260, padL = 36, padR = 12, padT = 14, padB = 30;
-  const iw = W - padL - padR, ih = H - padT - padB;
-  const n = trend.length;
-  const maxSessions = Math.max(1, ...trend.map((d) => d.sessions));
+  const W = 900, H = 260, padL = 38, padR = 14, padT = 14, padB = 30;
+  const iw = W - padL - padR, ih = H - padT - padB, n = trend.length;
+  const maxS = Math.max(1, ...trend.map((d) => d.sessions));
   const x = (i) => padL + (n === 1 ? iw / 2 : (i / (n - 1)) * iw);
   const y = (r) => padT + ih - (Math.max(0, Math.min(100, r)) / 100) * ih;
-  const svg = (t, a, ...k) => { const e = document.createElementNS("http://www.w3.org/2000/svg", t); for (const [kk, vv] of Object.entries(a || {})) e.setAttribute(kk, vv); k.forEach((c) => e.append(c)); return e; };
-
-  const g = svg("g");
-  // gridlines + y labels
+  const S2 = "http://www.w3.org/2000/svg";
+  const mk = (t, a, ...k) => { const e = document.createElementNS(S2, t); for (const [kk, vv] of Object.entries(a || {})) e.setAttribute(kk, vv); k.forEach((c) => e.append(c)); return e; };
+  const g = mk("g");
   [0, 25, 50, 75, 100].forEach((v) => {
-    g.append(svg("line", { class: "grid", x1: padL, y1: y(v), x2: W - padR, y2: y(v) }));
-    g.append(svg("text", { x: padL - 6, y: y(v) + 3, "text-anchor": "end" }, document.createTextNode(v + "%")));
+    g.append(mk("line", { class: "grid", x1: padL, y1: y(v), x2: W - padR, y2: y(v) }));
+    g.append(mk("text", { x: padL - 6, y: y(v) + 3, "text-anchor": "end" }, document.createTextNode(v + "%")));
   });
-  // session-count bars
   const bw = Math.max(1, iw / Math.max(n, 1) * 0.5);
-  trend.forEach((d, i) => {
-    const bh = (d.sessions / maxSessions) * ih * 0.5;
-    g.append(svg("rect", { class: "bar", x: x(i) - bw / 2, y: padT + ih - bh, width: bw, height: bh }));
-  });
-  // area + line for clean-session %
+  trend.forEach((d, i) => { const bh = (d.sessions / maxS) * ih * 0.5; g.append(mk("rect", { class: "bar", x: x(i) - bw / 2, y: padT + ih - bh, width: bw, height: bh, rx: 1.5 })); });
   const pts = trend.map((d, i) => [x(i), y(d.session_pass_rate == null ? 0 : d.session_pass_rate)]);
-  const linePath = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-  const areaPath = linePath + " L" + pts[pts.length - 1][0].toFixed(1) + " " + (padT + ih) + " L" + pts[0][0].toFixed(1) + " " + (padT + ih) + " Z";
-  g.append(svg("path", { class: "area", d: areaPath }));
-  g.append(svg("path", { class: "line", d: linePath }));
+  const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  g.append(mk("path", { class: "area", d: line + " L" + pts[n - 1][0].toFixed(1) + " " + (padT + ih) + " L" + pts[0][0].toFixed(1) + " " + (padT + ih) + " Z" }));
+  g.append(mk("path", { class: "line", d: line }));
   trend.forEach((d, i) => {
-    const dot = svg("circle", { class: "dot", cx: x(i), cy: y(d.session_pass_rate), r: 3 });
-    dot.append(svg("title", {}, document.createTextNode(
-      d.date + ": " + (d.session_pass_rate) + "% clean · " + d.sessions + " sessions · " +
-      d.testsets_failed + " test-sets failed" + (d.testset_pass_rate != null ? " · " + d.testset_pass_rate + "% test-sets pass" : ""))));
+    const dot = mk("circle", { class: "dot", cx: x(i), cy: y(d.session_pass_rate), r: 3.5 });
+    dot.append(mk("title", {}, document.createTextNode(d.date + ": " + d.session_pass_rate + "% clean · " + d.sessions + " sessions · " + d.testsets_failed + " test-sets failed")));
     g.append(dot);
   });
-  // x labels: first, middle, last
-  const idxs = n <= 1 ? [0] : [0, Math.floor((n - 1) / 2), n - 1];
-  [...new Set(idxs)].forEach((i) => g.append(svg("text", { x: x(i), y: H - 8, "text-anchor": i === 0 ? "start" : (i === n - 1 ? "end" : "middle") }, document.createTextNode(trend[i].date.slice(5)))));
-
-  return svg("svg", { class: "trend", viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "xMidYMid meet" },
-    svg("line", { class: "axis", x1: padL, y1: padT, x2: padL, y2: padT + ih }),
-    svg("line", { class: "axis", x1: padL, y1: padT + ih, x2: W - padR, y2: padT + ih }),
-    g);
+  const idxs = n <= 1 ? [0] : [...new Set([0, Math.floor((n - 1) / 2), n - 1])];
+  idxs.forEach((i) => g.append(mk("text", { x: x(i), y: H - 8, "text-anchor": i === 0 ? "start" : (i === n - 1 ? "end" : "middle") }, document.createTextNode(trend[i].date.slice(5)))));
+  return mk("svg", { class: "trend", viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "xMidYMid meet" },
+    mk("line", { class: "axis", x1: padL, y1: padT, x2: padL, y2: padT + ih }),
+    mk("line", { class: "axis", x1: padL, y1: padT + ih, x2: W - padR, y2: padT + ih }), g);
 }
 
 // =====================================================================
-//  TAB 2 — LANDED PATCHES
+//  LANDED
 // =====================================================================
 function landedControls() {
-  const presets = [7, 14, 30];
   return el("div", { class: "controls" },
-    el("div", { class: "group" }, el("label", {}, "Window"),
-      el("select", { onchange: (e) => { S.landed.days = +e.target.value; renderLanded(); } },
-        ...presets.map((d) => el("option", { value: d, selected: S.landed.days === d ? "" : null }, "last " + d + " days")))),
-    el("span", { class: "small muted" }, "Patches merged to each ExaScaler branch in the window."));
+    el("div", { class: "field" }, el("label", {}, "Window"),
+      el("select", { onchange: (e) => { S.landed.days = +e.target.value; loadLanded(false); } },
+        ...[7, 14, 30].map((d) => el("option", { value: d, selected: S.landed.days === d ? "" : null }, "Last " + d + " days")))),
+    el("span", { class: "muted small", style: "align-self:flex-end" }, "Patches merged to each ExaScaler branch."));
 }
-
-async function renderLanded(refresh) {
+async function loadLanded(refresh) {
+  LOADING.landed = true; renderLanded();
+  try { DATA.landed = await api("/api/landed", { days: S.landed.days }, refresh); }
+  catch (e) { DATA.landed = { branches: [], error: String(e) }; }
+  LOADING.landed = false; renderLanded();
+  const total = (DATA.landed.branches || []).reduce((a, b) => a + (b.count || 0), 0);
+  setBadge("landed", total);
+}
+function renderLanded() {
   const root = $("#tab-landed");
-  root.replaceChildren(landedControls(), loading("Querying Gerrit…"));
-  let data;
-  try { data = await api("/api/landed", { days: S.landed.days }, refresh); }
-  catch (e) { root.replaceChildren(landedControls(), el("div", { class: "banner error" }, String(e))); return; }
-
   const out = [landedControls()];
-  for (const b of data.branches) {
-    const card = el("div", { class: "card" },
-      el("h2", {}, b.label + " ",
-        el("span", { class: "chip accent" }, b.gerrit_branch),
-        " ", el("span", { class: "muted small" }, b.ok ? b.count + " merged in " + data.days + "d" : "")));
+  if (LOADING.landed || !DATA.landed) { out.push(el("div", { class: "card" }, spinnerBox("Querying Gerrit…"))); root.replaceChildren(...out); return; }
+  for (const b of DATA.landed.branches) {
+    const card = el("div", { class: "card" }, el("h2", {}, b.label, "  ", el("span", { class: "chip primary" }, b.gerrit_branch),
+      "  ", el("span", { class: "muted small" }, b.ok ? b.count + " merged in " + DATA.landed.days + "d" : "")));
     if (!b.ok) { card.append(sourceBanner(b, "gerrit")); out.push(card); continue; }
-    if (!b.count) { card.append(el("div", { class: "muted" }, "Nothing merged in this window.")); out.push(card); continue; }
+    if (!b.count) { card.append(el("div", { class: "empty" }, "Nothing merged in this window.")); out.push(card); continue; }
     const rows = b.patches.map((p) => el("tr", {},
       el("td", {}, el("a", { href: p.url, target: "_blank", class: "mono" }, "#" + p.number)),
-      el("td", {}, ticketLinks(p.tickets)),
-      el("td", { class: "subject" }, stripTicket(p.subject)),
-      el("td", { class: "owner nowrap" }, p.owner || "—"),
-      el("td", { class: "nowrap" }, fmtDate(p.updated)),
+      el("td", {}, ticketLinks(p.tickets)), el("td", { class: "subject" }, stripTicket(p.subject)),
+      el("td", { class: "owner nowrap" }, p.owner || "—"), el("td", { class: "nowrap" }, fmtDate(p.updated)),
       el("td", { class: "mono small nowrap" }, p.size || "")));
     card.append(el("div", { class: "scroll-x" }, el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "Patch"), el("th", {}, "Ticket"), el("th", {}, "Subject"), el("th", {}, "Owner"), el("th", {}, "Merged"), el("th", {}, "Size"))),
@@ -312,67 +313,62 @@ async function renderLanded(refresh) {
   root.replaceChildren(...out);
 }
 
-const stripTicket = (s) => (s || "").replace(/^((?:LU|EX|DDN|EHT|GCP|IME)-\d+\s+)+/i, "");
-
 // =====================================================================
-//  TAB 3 — BACKPORT CANDIDATES
+//  BACKPORTS
 // =====================================================================
 function backportControls() {
-  const presets = [30, 60, 90, 120, 180];
   return el("div", { class: "controls" },
-    el("div", { class: "group" }, el("label", {}, "Scan master"),
-      el("select", { onchange: (e) => { S.backports.days = +e.target.value; renderBackports(); } },
-        ...presets.map((d) => el("option", { value: d, selected: S.backports.days === d ? "" : null }, "last " + d + " days")))),
-    el("div", { class: "group" }, el("label", {}, "Show"),
+    el("div", { class: "field" }, el("label", {}, "Scan master"),
+      el("select", { onchange: (e) => { S.backports.days = +e.target.value; loadBackports(false); } },
+        ...[30, 60, 90, 120, 180].map((d) => el("option", { value: d, selected: S.backports.days === d ? "" : null }, "Last " + d + " days")))),
+    el("div", { class: "field" }, el("label", {}, "Show"),
       el("div", { class: "pill-toggle" },
-        el("button", { class: S.backports.onlyGaps ? "active" : "", onclick: () => { S.backports.onlyGaps = true; renderBackports(); } }, "Gaps only"),
-        el("button", { class: !S.backports.onlyGaps ? "active" : "", onclick: () => { S.backports.onlyGaps = false; renderBackports(); } }, "All patches"))),
-    el("span", { class: "small muted" }, "Click a row for ticket details & CI. ⚠ ticket-only = a companion patch may have been missed."));
+        el("button", { class: S.backports.onlyGaps ? "active" : "", onclick: () => { S.backports.onlyGaps = true; loadBackports(false); } }, "Gaps only"),
+        el("button", { class: !S.backports.onlyGaps ? "active" : "", onclick: () => { S.backports.onlyGaps = false; loadBackports(false); } }, "All patches"))),
+    el("span", { class: "muted small", style: "align-self:flex-end" }, "Click a row for ticket details & CI."));
 }
-
-async function renderBackports(refresh) {
+async function loadBackports(refresh) {
+  LOADING.backports = true; renderBackports();
+  try { DATA.backports = await api("/api/backports", { days: S.backports.days, only_gaps: S.backports.onlyGaps ? 1 : 0 }, refresh); }
+  catch (e) { DATA.backports = { error: String(e), candidates: [], branches: [], counts: {} }; }
+  LOADING.backports = false; renderBackports();
+  if (DATA.backports.candidate_count != null) setBadge("backports", DATA.backports.candidate_count);
+}
+function renderBackports() {
   const root = $("#tab-backports");
-  root.replaceChildren(backportControls(), loading("Diffing master against es6/es7 (several Gerrit queries)…"));
-  let data;
-  try { data = await api("/api/backports", { days: S.backports.days, only_gaps: S.backports.onlyGaps ? 1 : 0 }, refresh); }
-  catch (e) { root.replaceChildren(backportControls(), el("div", { class: "banner error" }, String(e))); return; }
-
   const out = [backportControls()];
+  const data = DATA.backports;
+  if (LOADING.backports || !data) { out.push(el("div", { class: "card" }, spinnerBox("Diffing master against es6/es7…"))); root.replaceChildren(...out); return; }
+  if (data.error) { out.push(el("div", { class: "banner error" }, el("span", { class: "i-wrap" }, icon("error")), el("div", {}, data.error))); root.replaceChildren(...out); return; }
 
-  // summary
   const tiles = el("div", { class: "tiles" });
   data.branches.forEach((b) => {
     const c = data.counts[b.key];
-    tiles.append(el("div", { class: "tile" },
-      el("div", { class: "v" }, (c.missing + c.ticket_only)),
-      el("div", { class: "k" }, b.label + " gaps — " + c.missing + " missing, " + c.ticket_only + " ticket-only")));
+    tiles.append(el("div", { class: "tile " + (c.missing + c.ticket_only ? "warn" : "good") },
+      el("div", { class: "v" }, c.missing + c.ticket_only),
+      el("div", { class: "k" }, b.label + " gaps — " + c.missing + " missing · " + c.ticket_only + " ticket-only")));
   });
-  tiles.append(el("div", { class: "tile" }, el("div", { class: "v" }, data.master_changes_scanned), el("div", { class: "k" }, "master patches scanned (" + data.scan_days + "d)")));
-  const summaryCard = el("div", { class: "card" }, el("h2", {}, "Backport gap summary"), tiles,
+  tiles.append(tile("", data.master_changes_scanned, "master patches scanned (" + data.scan_days + "d)"));
+  const summary = el("div", { class: "card" }, el("h2", {}, "Backport gap summary"), tiles,
     el("div", { class: "legend" },
-      el("span", {}, statusChip("ported")),
-      el("span", {}, statusChip("ticket_only"), " companion possibly missed"),
+      el("span", {}, statusChip("ported")), el("span", {}, statusChip("ticket_only"), " companion possibly missed"),
       el("span", {}, statusChip("missing"), " ticket absent from branch")));
-  if (data.errors && data.errors.length) summaryCard.append(el("div", { class: "banner error", style: "margin-top:12px" }, el("h3", {}, "Some queries failed"), ...data.errors.slice(0, 4).map((e) => el("div", { class: "small mono" }, e))));
-  out.push(summaryCard);
+  if (data.errors && data.errors.length)
+    summary.append(el("div", { class: "banner error", style: "margin-top:14px" }, el("span", { class: "i-wrap" }, icon("error")),
+      el("div", {}, el("h3", {}, "Some queries failed"), ...data.errors.slice(0, 4).map((e) => el("div", { class: "small mono" }, e)))));
+  out.push(summary);
 
-  // table
   const tbody = el("tbody");
   data.candidates.forEach((row) => tbody.append(...backportRow(row, data.branches)));
-  const tableCard = el("div", { class: "card" },
-    el("h2", {}, "Candidates" + (data.truncated ? " (showing first " + data.candidates.length + ")" : " (" + data.candidate_count + ")")),
+  out.push(el("div", { class: "card" },
+    el("h2", {}, "Candidates" + (data.truncated ? " (first " + data.candidates.length + " of " + data.candidate_count + ")" : " (" + data.candidate_count + ")")),
     el("div", { class: "scroll-x" }, el("table", {},
-      el("thead", {}, el("tr", {},
-        el("th", {}, "Master patch"), el("th", {}, "Ticket"),
-        ...data.branches.map((b) => el("th", {}, b.label)))),
-      tbody)));
-  out.push(tableCard);
+      el("thead", {}, el("tr", {}, el("th", {}, "Master patch"), el("th", {}, "Ticket"), ...data.branches.map((b) => el("th", {}, b.label)))),
+      tbody))));
   root.replaceChildren(...out);
 }
-
 function backportRow(row, branches) {
-  const master = el("td", {},
-    el("a", { href: row.url, target: "_blank", class: "mono" }, "#" + row.number),
+  const master = el("td", {}, el("a", { href: row.url, target: "_blank", class: "mono" }, "#" + row.number),
     " ", el("span", { class: "subject" }, stripTicket(row.subject)),
     el("div", { class: "small muted" }, (row.owner || "") + " · " + (row.master_repo || "") + " · " + fmtDate(row.updated)));
   const cells = branches.map((b) => {
@@ -380,18 +376,13 @@ function backportRow(row, branches) {
     const cell = el("td", {}, statusChip(st.state));
     if (st.state === "ported" && st.change) cell.append(" ", changeLink(st.change));
     if (st.state === "ticket_only" && st.related) cell.append(" ", el("span", { class: "small muted" }, st.related.length + " related"));
-    if (st.state !== "ported") {
-      cell.append(el("div", {}, el("button", {
-        class: "btn sm", style: "margin-top:6px",
-        onclick: (e) => { e.stopPropagation(); openPing(b, row); },
-      }, "✉ Ping " + b.ping_name)));
-    }
+    if (st.state !== "ported")
+      cell.append(el("div", { style: "margin-top:8px" }, el("button", { class: "btn tonal sm", onclick: (e) => { e.stopPropagation(); openPing(b, row); } }, icon("mail"), "Ping " + b.ping_name)));
     return cell;
   });
-
   const tr = el("tr", { class: "clickable" }, master, el("td", {}, ticketLinks(row.tickets)), ...cells);
   const detail = el("tr", { class: "detail-row", style: "display:none" },
-    el("td", { colspan: 2 + branches.length }, el("div", { class: "detail-grid detail-body" }, el("span", { class: "muted small" }, "click to load…"))));
+    el("td", { colspan: 2 + branches.length }, el("div", { class: "detail-grid detail-body" })));
   let loaded = false;
   tr.addEventListener("click", () => {
     const show = detail.style.display === "none";
@@ -400,24 +391,21 @@ function backportRow(row, branches) {
   });
   return [tr, detail];
 }
-
 async function loadBackportDetail(box, row, branches) {
-  box.replaceChildren(loading("Fetching ticket & CI details…"));
+  box.replaceChildren(spinnerBox("Fetching ticket & CI…"));
   const parts = [];
-  // tickets
   for (const t of row.tickets) {
-    const card = el("div", { class: "kv" }, el("div", {}, el("strong", {}, el("a", { href: t.url, target: "_blank" }, t.key))), loading("ticket…"));
+    const card = el("div", { class: "kv" }, el("div", {}, el("strong", {}, el("a", { href: t.url, target: "_blank" }, t.key))), spinnerBox("ticket…"));
     parts.push(card);
     api("/api/ticket", { key: t.key }).then((d) => renderTicketCard(card, d)).catch((e) => card.replaceChildren(el("div", {}, el("a", { href: t.url, target: "_blank" }, t.key)), el("div", { class: "small mono" }, String(e))));
   }
-  // branch changes + CI
   branches.forEach((b) => {
     const st = row.branches[b.key];
     const changes = st.state === "ported" ? [st.change] : (st.related || []);
     if (!changes.length) return;
     const card = el("div", { class: "kv" }, el("div", { class: "k" }, b.label + " changes"));
     changes.forEach((c) => {
-      const line = el("div", { class: "small" }, changeLink(c), " ", el("span", { class: "muted" }, stripTicket(c.subject || "").slice(0, 60)), " ", el("span", { class: "ci" }, ""));
+      const line = el("div", { class: "small", style: "margin-top:4px" }, changeLink(c), " ", el("span", { class: "muted" }, stripTicket(c.subject || "").slice(0, 56)), " ", el("span", { class: "ci" }));
       card.append(line);
       api("/api/change", { url: c.url }).then((d) => {
         if (!d.ok || d.verified == null) return;
@@ -429,68 +417,74 @@ async function loadBackportDetail(box, row, branches) {
   });
   box.replaceChildren(...(parts.length ? parts : [el("span", { class: "muted small" }, "No linked tickets or branch changes.")]));
 }
-
 function renderTicketCard(card, d) {
   if (!d.ok) { card.replaceChildren(el("div", {}, el("a", { href: d.url, target: "_blank" }, d.key)), el("div", { class: "small mono muted" }, d.error || "lookup failed")); return; }
-  const isCustomer = d.is_cloud;
   const hot = /blocker|critical/i.test(d.priority || "");
-  const chips = el("div", {});
+  const chips = el("div", { style: "margin:4px 0" });
   if (d.status) chips.append(el("span", { class: "chip neutral" }, d.status));
   if (d.priority) chips.append(" ", el("span", { class: "chip " + (hot ? "bad" : "neutral") }, d.priority));
-  if (isCustomer) chips.append(" ", el("span", { class: "chip accent", title: "Tracked in the DDN cloud Jira (EX/DDN/etc.) — customer-facing tracker" }, "DDN tracker"));
+  if (d.is_cloud) chips.append(" ", el("span", { class: "chip primary", title: "Tracked in the DDN cloud Jira — customer-facing tracker" }, "DDN tracker"));
   card.replaceChildren(
-    el("div", {}, el("strong", {}, el("a", { href: d.url, target: "_blank" }, d.key)), " ", chips),
+    el("div", {}, el("strong", {}, el("a", { href: d.url, target: "_blank" }, d.key))), chips,
     el("div", { class: "small" }, d.summary || ""),
-    el("div", { class: "small muted" }, [d.assignee ? "assignee " + d.assignee : null, (d.fix_versions || []).length ? "fixVersions " + d.fix_versions.join(", ") : null].filter(Boolean).join(" · ")));
+    el("div", { class: "small muted", style: "margin-top:4px" }, [d.assignee ? "assignee " + d.assignee : null, (d.fix_versions || []).length ? "fixVersions " + d.fix_versions.join(", ") : null].filter(Boolean).join(" · ")));
 }
 
-// ---------- Teams ping modal ----------
+// ---------- Teams ping dialog ----------
 async function openPing(branchMeta, row) {
   let data;
-  try {
-    data = await api("/api/ping", { branch: branchMeta.key, subject: row.subject, url: row.url, ticket: row.tickets.map((t) => t.key) });
-  } catch (e) { alert("Could not build ping: " + e); return; }
-  showPingModal(branchMeta, data);
-}
-
-function teamsLink(email, message) {
-  return "https://teams.microsoft.com/l/chat/0/0?users=" + encodeURIComponent(email) + "&message=" + encodeURIComponent(message);
-}
-
-function showPingModal(branchMeta, data) {
+  try { data = await api("/api/ping", { branch: branchMeta.key, subject: row.subject, url: row.url, ticket: row.tickets.map((t) => t.key) }); }
+  catch (e) { snack("Could not build ping: " + e); return; }
+  const teamsLink = (email, message) => "https://teams.microsoft.com/l/chat/0/0?users=" + encodeURIComponent(email) + "&message=" + encodeURIComponent(message);
   const ta = el("textarea", {}, data.message);
-  const back = el("div", { class: "modal-back", onclick: (e) => { if (e.target === back) back.remove(); } },
-    el("div", { class: "modal" },
-      el("h2", {}, "Ping about backport to " + branchMeta.gerrit_branch),
-      el("div", { class: "who" }, "To " + data.reviewer + " <" + data.email + "> — opens in Microsoft Teams; review & send yourself."),
+  const scrim = el("div", { class: "scrim", onclick: (e) => { if (e.target === scrim) scrim.remove(); } },
+    el("div", { class: "dialog" },
+      el("h2", {}, "Backport ping — " + branchMeta.gerrit_branch),
+      el("div", { class: "who" }, "To " + data.reviewer + " <" + data.email + ">. Opens in Microsoft Teams; review & send yourself."),
       ta,
       el("div", { class: "actions" },
-        el("button", { class: "btn", onclick: () => back.remove() }, "Cancel"),
-        el("button", { class: "btn", onclick: (e) => { navigator.clipboard.writeText(ta.value); e.target.textContent = "Copied ✓"; } }, "Copy"),
-        el("button", { class: "btn", onclick: () => { location.href = "mailto:" + data.email + "?subject=" + encodeURIComponent("Backport request: " + stripTicket(ta.value.split("\n")[1] || "")) + "&body=" + encodeURIComponent(ta.value); } }, "Email"),
-        el("button", { class: "btn accent", onclick: () => window.open(teamsLink(data.email, ta.value), "_blank") }, "Open in Teams"))));
-  $("#modal-root").replaceChildren(back);
+        el("button", { class: "btn text", onclick: () => scrim.remove() }, "Cancel"),
+        el("button", { class: "btn text", onclick: (e) => { navigator.clipboard.writeText(ta.value); e.currentTarget.textContent = "Copied"; } }, icon("copy"), "Copy"),
+        el("button", { class: "btn tonal", onclick: () => { location.href = "mailto:" + data.email + "?subject=" + encodeURIComponent("Backport request") + "&body=" + encodeURIComponent(ta.value); } }, icon("mail"), "Email"),
+        el("button", { class: "btn filled", onclick: () => window.open(teamsLink(data.email, ta.value), "_blank") }, icon("open_in_new"), "Open in Teams"))));
+  $("#dialog-root").replaceChildren(scrim);
 }
 
-// ---------- boot ----------
+// ---------- badges / tabs / boot ----------
+function setBadge(name, n) {
+  const b = $("#badge-" + name);
+  if (!b) return;
+  b.textContent = n;
+  b.hidden = !n;
+}
+function switchTab(name) {
+  S.tab = name;
+  $$("#tabs .tab-btn").forEach((x) => x.classList.toggle("active", x.dataset.tab === name));
+  $$(".tab").forEach((s) => s.classList.toggle("active", s.id === "tab-" + name));
+}
+async function loadAll(refresh) {
+  await Promise.allSettled([loadStability(refresh), loadLanded(refresh), loadBackports(refresh)]);
+  markUpdated();
+  if (refresh) snack("Data refreshed");
+}
+function setAuto(sec) {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  if (sec > 0) autoTimer = setInterval(() => loadAll(true), sec * 1000);
+}
 async function boot() {
+  $("#refresh").append(icon("refresh"));
+  $(".fab-icon", document).replaceWith(icon("refresh"));
   try { CFG = await api("/api/config"); }
-  catch (e) { document.querySelector("main").append(el("div", { class: "banner error" }, "Could not load config: " + e)); return; }
-  $("#today").textContent = CFG.today;
-  $$("#tabs button").forEach((b) => b.addEventListener("click", () => {
-    S.tab = b.dataset.tab;
-    $$("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
-    $$(".tab").forEach((s) => s.classList.toggle("active", s.id === "tab-" + S.tab));
-    renderActive(false);
-  }));
-  $("#refresh").addEventListener("click", () => renderActive(true));
-  renderActive(false);
-}
+  catch (e) { $("main").append(el("div", { class: "banner error" }, "Could not load config: " + e)); return; }
 
-function renderActive(refresh) {
-  if (S.tab === "stability") return renderStability(refresh);
-  if (S.tab === "landed") return renderLanded(refresh);
-  if (S.tab === "backports") return renderBackports(refresh);
-}
+  $("#branch-chips").replaceChildren(...CFG.branches.map((b) => el("span", { class: "chip outline" }, b.key)));
+  $$("#tabs .tab-btn").forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+  $("#refresh").addEventListener("click", () => loadAll(true));
+  $("#fab").addEventListener("click", () => loadAll(true));
+  $("#auto").addEventListener("change", (e) => setAuto(+e.target.value));
 
+  // eager initial spinners so nothing is blank, then load everything at once
+  renderStability(); renderLanded(); renderBackports();
+  await loadAll(false);
+}
 boot();

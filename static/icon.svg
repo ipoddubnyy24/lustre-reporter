@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Lustre Reporter">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4c8dff"/>
+      <stop offset="1" stop-color="#1b6ef3"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="92" height="92" rx="22" fill="url(#g)"/>
+  <g fill="#ffffff">
+    <rect x="23" y="56" width="12" height="21" rx="3"/>
+    <rect x="44" y="44" width="12" height="33" rx="3"/>
+    <rect x="65" y="30" width="12" height="47" rx="3"/>
+  </g>
+  <path d="M29 52 L50 41 L71 27" fill="none" stroke="#cfe3ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+  <circle cx="71" cy="27" r="5" fill="#ffffff"/>
+</svg>

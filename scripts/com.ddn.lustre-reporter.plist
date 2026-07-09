@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  launchd LaunchAgent alternative to the .app bundle. Clearly identifiable in
+  `launchctl list` and Login Items (Background) by the label com.ddn.lustre-reporter.
+
+  Install:
+    sed "s#__REPO_DIR__#$HOME/work/src/lustre_reporter#g" \
+      scripts/com.ddn.lustre-reporter.plist > ~/Library/LaunchAgents/com.ddn.lustre-reporter.plist
+    launchctl load ~/Library/LaunchAgents/com.ddn.lustre-reporter.plist
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.ddn.lustre-reporter.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.ddn.lustre-reporter</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd "__REPO_DIR__" &amp;&amp; exec python3 -m lustre_reporter --port 9835</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><false/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/tmp/lustre-reporter.log</string>
+  <key>StandardErrorPath</key><string>/tmp/lustre-reporter.err</string>
+</dict>
+</plist>

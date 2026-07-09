@@ -4,22 +4,44 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lustre Reporter</title>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#eeedf1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1d2024" media="(prefers-color-scheme: dark)">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🐟</text></svg>">
+  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
 </head>
 <body>
-  <header class="top">
-    <h1>🐟 Lustre Reporter</h1>
-    <span class="sub">ExaScaler branch health — es6 &amp; es7</span>
+  <div class="app-bar">
+    <div class="brand">
+      <img class="logo" src="/static/icon.svg" alt="Lustre Reporter">
+      <span class="title">Lustre Reporter</span>
+      <span class="chip-branches" id="branch-chips"></span>
+    </div>
     <span class="spacer"></span>
-    <span class="today" id="today"></span>
-    <button class="btn sm" id="refresh" title="Bypass cache and reload the active tab">↻ Refresh</button>
-  </header>
+    <span class="updated" id="updated" title="Last refreshed"></span>
+    <div class="bar-actions">
+      <div class="field" style="flex-direction:row;align-items:center;gap:6px">
+        <label for="auto" style="margin:0">Auto</label>
+        <select id="auto" title="Auto-refresh interval">
+          <option value="0">Off</option>
+          <option value="300">5 min</option>
+          <option value="900">15 min</option>
+          <option value="1800">30 min</option>
+        </select>
+      </div>
+      <button class="icon-btn" id="refresh" title="Refresh all data (bypass cache)" aria-label="Refresh"></button>
+    </div>
+  </div>
+  <div class="linear hidden" id="progress"><i></i></div>
 
   <nav class="tabs" id="tabs">
-    <button data-tab="stability" class="active">Build stability</button>
-    <button data-tab="landed">Landed (last 7d)</button>
-    <button data-tab="backports">Backport candidates</button>
+    <button class="tab-btn active" data-tab="stability">Build stability</button>
+    <button class="tab-btn" data-tab="landed">Landed <span class="badge" id="badge-landed" hidden></span></button>
+    <button class="tab-btn" data-tab="backports">Backports <span class="badge" id="badge-backports" hidden></span></button>
   </nav>
 
   <main>
@@ -28,7 +50,13 @@
     <section class="tab" id="tab-backports"></section>
   </main>
 
-  <div id="modal-root"></div>
+  <button class="fab" id="fab" title="Refresh all data">
+    <span class="fab-icon"></span><span>Refresh</span>
+  </button>
+
+  <div id="dialog-root"></div>
+  <div class="snackbar" id="snackbar"></div>
+  <script src="/static/icons.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

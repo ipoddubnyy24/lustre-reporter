@@ -15,6 +15,11 @@ questions the porting team asks every week:
 
 It runs entirely on your machine and serves over **https://localhost:9835**.
 
+The UI is a Material Design dashboard: **all three reports load as soon as you
+open it** (no click-to-load), with a one-click **Refresh** (app-bar icon or the
+floating button) and an optional **auto-refresh** interval. Light and dark
+themes follow the OS.
+
 ## How it works
 
 The app is a small, **dependency-free** Python program (standard library only).
@@ -54,6 +59,31 @@ Then open **https://localhost:9835** and accept the one-time self-signed
 certificate warning (the cert is generated into `certs/`, which is git-ignored).
 
 Options: `--port N`, `--host H`, `--open` (open a browser), `--ttl S` (cache TTL).
+
+## Run at login (macOS)
+
+Build a native app bundle that is **clearly identifiable in System Settings →
+General → Login Items** — it appears as **"Lustre Reporter"** with a bar-chart
+icon, not an anonymous `python3` process:
+
+```bash
+./scripts/make-macos-app.sh          # builds "~/Applications/Lustre Reporter.app"
+```
+
+Then add **Lustre Reporter** under Login Items → **+**. At login it starts the
+server and opens the dashboard. Bundle id: `com.ddn.lustre-reporter`. (It runs as
+a background agent — `LSUIElement` — so it doesn't clutter the Dock; remove that
+key from `Info.plist` if you want a Dock icon.)
+
+Prefer a headless launchd service? Use the agent template instead — it's
+identifiable in `launchctl list` and Login Items by the label
+`com.ddn.lustre-reporter`:
+
+```bash
+sed "s#__REPO_DIR__#$HOME/work/src/lustre_reporter#g" \
+  scripts/com.ddn.lustre-reporter.plist > ~/Library/LaunchAgents/com.ddn.lustre-reporter.plist
+launchctl load ~/Library/LaunchAgents/com.ddn.lustre-reporter.plist
+```
 
 ## Enabling the build-stability report (Maloo)
 
