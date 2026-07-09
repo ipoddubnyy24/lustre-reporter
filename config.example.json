@@ -1,0 +1,44 @@
+{
+  "_comment": "Copy to config.local.json (git-ignored) and edit to override defaults. All keys are optional; unspecified keys keep their built-in defaults.",
+  "host": "localhost",
+  "port": 9835,
+  "backport_scan_days": 120,
+  "gerrit_web_base": "https://review.whamcloud.com",
+  "jira_lu_base": "https://jira.whamcloud.com/browse",
+  "jira_cloud_base": "https://ime-ddn.atlassian.net/browse",
+  "cloud_projects": ["EX", "DDN", "EHT", "GCP", "IME"],
+  "branches": [
+    {
+      "key": "es6",
+      "label": "ExaScaler 6",
+      "gerrit_project": "ex/lustre-release",
+      "gerrit_branch": "b_es6_0",
+      "maloo_trigger_job": "lustre-b_es6_0",
+      "ping_name": "Li Xi",
+      "ping_email": "lixi@ddn.com"
+    },
+    {
+      "key": "es7",
+      "label": "ExaScaler 7",
+      "gerrit_project": "ex/lustre-release",
+      "gerrit_branch": "b_es7_0",
+      "maloo_trigger_job": "lustre-b_es7_0",
+      "ping_name": "Marc-Andre Vef",
+      "ping_email": "mvef@ddn.com"
+    }
+  ],
+  "masters": [
+    {
+      "key": "community",
+      "label": "Community master (fs/lustre-release)",
+      "gerrit_project": "fs/lustre-release",
+      "gerrit_branch": "master"
+    },
+    {
+      "key": "exa",
+      "label": "ExaScaler master (ex/lustre-release)",
+      "gerrit_project": "ex/lustre-release",
+      "gerrit_branch": "master"
+    }
+  ]
+}

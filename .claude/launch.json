@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lustre-reporter",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "lustre_reporter", "--port", "9835"],
+      "port": 9835
+    }
+  ]
+}

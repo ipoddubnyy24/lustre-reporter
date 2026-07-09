@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lustre-reporter"
+version = "0.1.0"
+description = "Local dashboard for ExaScaler Lustre branch health: build stability, landed patches, and backport candidates."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Ivan Poddubnyy", email = "ipoddubnyy@ddn.com" }]
+# No third-party runtime dependencies: the app uses only the Python standard
+# library and shells out to the llm_jira CLIs (jira / gerrit / maloo).
+dependencies = []
+
+[project.scripts]
+lustre-reporter = "lustre_reporter.__main__:main"
+
+[tool.setuptools]
+packages = ["lustre_reporter", "lustre_reporter.sources", "lustre_reporter.analysis"]
+
+[tool.setuptools.package-data]
+lustre_reporter = ["../static/*"]

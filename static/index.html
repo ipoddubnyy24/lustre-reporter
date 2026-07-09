@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lustre Reporter</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🐟</text></svg>">
+</head>
+<body>
+  <header class="top">
+    <h1>🐟 Lustre Reporter</h1>
+    <span class="sub">ExaScaler branch health — es6 &amp; es7</span>
+    <span class="spacer"></span>
+    <span class="today" id="today"></span>
+    <button class="btn sm" id="refresh" title="Bypass cache and reload the active tab">↻ Refresh</button>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="stability" class="active">Build stability</button>
+    <button data-tab="landed">Landed (last 7d)</button>
+    <button data-tab="backports">Backport candidates</button>
+  </nav>
+
+  <main>
+    <section class="tab active" id="tab-stability"></section>
+    <section class="tab" id="tab-landed"></section>
+    <section class="tab" id="tab-backports"></section>
+  </main>
+
+  <div id="modal-root"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

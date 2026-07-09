@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Local machine-specific config and secrets (never commit)
+config.local.json
+certs/
+*.pem
+
+# macOS
+.DS_Store
