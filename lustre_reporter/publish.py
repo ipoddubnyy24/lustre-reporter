@@ -107,7 +107,7 @@ def build_page_html(cfg, branch, cl: dict, *, now: datetime | None = None) -> st
 
     latest = builds[0]
     parts.append(f"<h2>Latest build: {_esc(latest['tag'])} ({_esc(latest['date'])})</h2>")
-    parts.append(f"<h3>In build {_esc(latest['tag'])} — test this ({latest['count']})</h3>")
+    parts.append(f"<h3>In build {_esc(latest['tag'])} ({latest['count']})</h3>")
     parts.append(_areas_line(latest["areas"]))
     parts.append(_table(cfg, latest["patches"]))
 

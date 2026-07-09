@@ -107,7 +107,7 @@ port with `LUSTRE_REPORTER_PORT` (default 9835) — don't run the daemon and
 The Landed report publishes a **per-branch QA changelog** to Confluence — one
 page per branch in the target folder. For each *build* (tag) it shows:
 
-- **In build `<tag>` — test this**: what that build added vs the previous build
+- **In build `<tag>`**: what that build added vs the previous build
   (`prev_tag..tag`). Always populated, even right after a tag is cut — which is
   exactly what QA needs to plan tests for that build.
 - **Coming next**: merged since the latest tag (`tag..HEAD`), not yet in a build.
