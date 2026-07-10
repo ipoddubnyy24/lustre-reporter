@@ -87,11 +87,11 @@ def test_publish_all_disabled():
     assert emf_publish.publish_all(cfg)["ok"] is False
 
 
-def test_publish_all_no_space():
+def test_publish_all_no_targets():
     cfg = _cfg()
-    cfg.emf = {**cfg.emf, "confluence": {"enabled": True}}       # no space_id
+    cfg.emf = {**cfg.emf, "confluence": {"enabled": True}}       # no targets, no space_id
     r = emf_publish.publish_all(cfg)
-    assert not r["ok"] and "space_id" in r["error"]
+    assert not r["ok"] and "targets" in r["error"]
 
 
 def test_publish_all_client_error(monkeypatch):
@@ -109,9 +109,12 @@ def test_publish_all_ok(monkeypatch):
     monkeypatch.setattr(emf_publish.emf, "collect_coming", lambda c: COMING_OK)
     r = emf_publish.publish_all(_cfg())
     assert r["ok"]
-    assert [c["title"] for c in client.calls] == [
-        "EMF — Landed (current build)", "EMF — Incoming: Main release", "EMF — Incoming: GCP"]
-    assert [x["page"] for x in r["results"]] == ["landed", "coming:main", "coming:gcp"]
+    # 3 pages × 2 targets (personal + EXAScaler-ENG)
+    assert len(client.calls) == 6
+    assert {c["title"] for c in client.calls} == {
+        "EMF — Landed (current build)", "EMF — Incoming: Main release", "EMF — Incoming: GCP"}
+    assert {x["page"] for x in r["results"]} == {"landed", "coming:main", "coming:gcp"}
+    assert {x["space"] for x in r["results"]} == {"1075183618", "3669721108"}   # both destinations
 
 
 def test_publish_all_skips_line_without_releases(monkeypatch):
@@ -122,7 +125,8 @@ def test_publish_all_skips_line_without_releases(monkeypatch):
     monkeypatch.setattr(emf_publish.emf, "collect_coming",
                         lambda c: {"ok": True, "releases": [COMING_OK["releases"][0]]})
     r = emf_publish.publish_all(_cfg())
-    assert [x["page"] for x in r["results"]] == ["landed", "coming:main"]
+    assert {x["page"] for x in r["results"]} == {"landed", "coming:main"}   # gcp line skipped
+    assert len(r["results"]) == 4                                          # (landed + main) × 2 targets
 
 
 def test_publish_all_coming_error(monkeypatch):

@@ -133,13 +133,28 @@ def _page_title(conf, branch) -> str:
     return tmpl.format(label=branch.label, gerrit_branch=branch.gerrit_branch, key=branch.key)
 
 
+def targets(conf: dict) -> list:
+    """Publish destinations as [{space_id, parent_id}].
+
+    ``targets`` is authoritative; otherwise fall back to the legacy single
+    ``space_id``/``parent_id``; otherwise empty (nothing configured).
+    """
+    ts = [t for t in (conf.get("targets") or []) if t.get("space_id")]
+    if ts:
+        return ts
+    if conf.get("space_id"):
+        return [{"space_id": conf["space_id"], "parent_id": conf.get("parent_id")}]
+    return []
+
+
 def publish_all(cfg) -> dict:
-    """Build + upsert one Confluence page per branch. Returns a result summary."""
+    """Build each branch page once and upsert it to every configured target."""
     conf = getattr(cfg, "confluence", None) or {}
     if not conf.get("enabled"):
         return {"ok": False, "error": "Confluence publishing is disabled (set confluence.enabled)."}
-    if not conf.get("space_id"):
-        return {"ok": False, "error": "confluence.space_id not configured."}
+    dests = targets(conf)
+    if not dests:
+        return {"ok": False, "error": "confluence has no targets (set confluence.targets or space_id)."}
     try:
         client = Confluence(conf.get("site"))
     except ConfluenceError as exc:
@@ -148,22 +163,22 @@ def publish_all(cfg) -> dict:
     now = now_pt()
     results = []
     for b in cfg.branches:
-        entry = {"branch": b.key, "label": b.label}
         cl = git_tags.build_changelog(cfg.lustre_clone, b.gerrit_branch,
                                       max_builds=conf.get("max_builds", 5),
                                       fetch_cfg=cfg.git_fetch)
         if not cl.get("ok"):
-            entry.update({"ok": False, "error": cl.get("error")})
-            results.append(entry)
+            results.append({"branch": b.key, "label": b.label, "ok": False, "error": cl.get("error")})
             continue
         title = _page_title(conf, b)
-        try:
-            up = client.upsert(conf["space_id"], conf.get("parent_id"), title,
-                               build_page_html(cfg, b, cl, now=now))
-            entry.update({"ok": True, "title": title, "latest_tag": cl["latest_tag"], **up})
-        except ConfluenceError as exc:
-            entry.update({"ok": False, "title": title, "error": str(exc)})
-        results.append(entry)
+        html = build_page_html(cfg, b, cl, now=now)
+        for t in dests:
+            entry = {"branch": b.key, "label": b.label, "space": t["space_id"], "title": title}
+            try:
+                up = client.upsert(t["space_id"], t.get("parent_id"), title, html)
+                entry.update({"ok": True, "latest_tag": cl["latest_tag"], **up})
+            except ConfluenceError as exc:
+                entry.update({"ok": False, "error": str(exc)})
+            results.append(entry)
 
     return {"ok": all(r.get("ok") for r in results),
             "published_at": now.strftime("%Y-%m-%d %H:%M %Z") or now.strftime("%Y-%m-%d %H:%M"),

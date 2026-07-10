@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from . import emf
-from .publish import _areas_line, _esc, _table, next_update_pt, now_pt
+from .publish import _areas_line, _esc, _table, next_update_pt, now_pt, targets
 from .sources.confluence import Confluence, ConfluenceError
 
 
@@ -133,29 +133,22 @@ def publish_all(cfg) -> dict:
     if not (emfc.get("enabled") and conf.get("enabled")):
         return {"ok": False, "error": "EMF Confluence publishing is disabled "
                 "(emf.enabled + emf.confluence.enabled)."}
-    if not conf.get("space_id"):
-        return {"ok": False, "error": "emf.confluence.space_id not configured."}
+    dests = targets(conf)
+    if not dests:
+        return {"ok": False, "error": "emf.confluence has no targets (set emf.confluence.targets or space_id)."}
     try:
         client = Confluence(conf.get("site"))
     except ConfluenceError as exc:
         return {"ok": False, "error": str(exc)}
 
     now = now_pt()
-    space, parent = conf["space_id"], conf.get("parent_id")
-    results = []
-
+    # Build every page once, then upsert to each destination.
     landed_title = conf.get("landed_title", "EMF — Landed (current build)")
-    try:
-        up = client.upsert(space, parent, landed_title,
-                           build_landed_html(cfg, emf.collect_landed(cfg), now=now))
-        results.append({"page": "landed", "title": landed_title, "ok": True, **up})
-    except ConfluenceError as exc:
-        results.append({"page": "landed", "title": landed_title, "ok": False, "error": str(exc)})
+    landed_html = build_landed_html(cfg, emf.collect_landed(cfg), now=now)
 
     coming = emf.collect_coming(cfg)
-    if not coming.get("ok"):
-        results.append({"page": "coming", "ok": False, "error": coming.get("error")})
-    else:
+    coming_pages = []   # (page_key, title, html)
+    if coming.get("ok"):
         by_line: dict = {}
         for r in coming["releases"]:
             by_line.setdefault(r.get("line", "other"), []).append(r)
@@ -164,14 +157,29 @@ def publish_all(cfg) -> dict:
             rels = by_line.get(ln.get("key"))
             if not rels:
                 continue                      # no upcoming release on this line — skip
-            title = tmpl.format(line_label=ln.get("label"), line=ln.get("key"))
-            try:
-                up = client.upsert(space, parent, title, build_coming_html(cfg, ln, rels, now=now))
-                results.append({"page": "coming:" + ln.get("key"), "title": title, "ok": True, **up})
-            except ConfluenceError as exc:
-                results.append({"page": "coming:" + ln.get("key"), "title": title,
-                                "ok": False, "error": str(exc)})
+            coming_pages.append(("coming:" + ln.get("key"),
+                                 tmpl.format(line_label=ln.get("label"), line=ln.get("key")),
+                                 build_coming_html(cfg, ln, rels, now=now)))
+
+    results = []
+    for t in dests:
+        space, parent = t["space_id"], t.get("parent_id")
+        results.append(_upsert(client, space, parent, "landed", landed_title, landed_html))
+        if not coming.get("ok"):
+            results.append({"page": "coming", "space": space, "ok": False, "error": coming.get("error")})
+        else:
+            for page_key, title, html in coming_pages:
+                results.append(_upsert(client, space, parent, page_key, title, html))
 
     return {"ok": all(r.get("ok") for r in results) if results else False,
             "published_at": now.strftime("%Y-%m-%d %H:%M %Z"),
             "results": results}
+
+
+def _upsert(client, space, parent, page, title, html) -> dict:
+    entry = {"page": page, "space": space, "title": title}
+    try:
+        entry.update({"ok": True, **client.upsert(space, parent, title, html)})
+    except ConfluenceError as exc:
+        entry.update({"ok": False, "error": str(exc)})
+    return entry

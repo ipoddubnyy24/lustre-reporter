@@ -127,6 +127,13 @@ class Config:
         "enabled": True,
         "auto_publish": True,
         "site": "https://ime-ddn.atlassian.net",
+        # Publish destinations — each page is upserted to every target. `targets`
+        # is authoritative; space_id/parent_id below are the legacy single-target
+        # fallback (used only if `targets` is empty).
+        "targets": [
+            {"space_id": "1075183618", "parent_id": "3692101696"},   # personal space, "lustre" folder
+            {"space_id": "3669721108", "parent_id": "3697049736"},   # EXAScaler-ENG, "lustre-reports"
+        ],
         "space_id": "1075183618",
         "parent_id": "3692101696",
         "title_template": "ExaScaler Landed Patches — {label} ({gerrit_branch})",
@@ -187,6 +194,11 @@ class Config:
         # (the "exa" folder in the personal space, twice daily as the daemon).
         "confluence": {
             "enabled": True,
+            # Each page is upserted to every target (original + EXAScaler-ENG).
+            "targets": [
+                {"space_id": "1075183618", "parent_id": "3696656391"},   # personal space, "exa" folder
+                {"space_id": "3669721108", "parent_id": "3696754779"},   # EXAScaler-ENG, "exa-reports"
+            ],
             "space_id": "1075183618",
             "parent_id": "3696656391",
             "landed_title": "EMF — Landed (current build)",

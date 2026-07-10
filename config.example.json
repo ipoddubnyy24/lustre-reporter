@@ -10,9 +10,14 @@
     "use_origin": true
   },
   "confluence": {
+    "_comment": "Each branch page is upserted to every entry in `targets`. space_id/parent_id are the legacy single-target fallback (used only if targets is empty).",
     "enabled": true,
     "auto_publish": true,
     "site": "https://ime-ddn.atlassian.net",
+    "targets": [
+      {"space_id": "1075183618", "parent_id": "3692101696"},
+      {"space_id": "3669721108", "parent_id": "3697049736"}
+    ],
     "space_id": "1075183618",
     "parent_id": "3692101696",
     "title_template": "ExaScaler Landed Patches — {label} ({gerrit_branch})",
@@ -54,8 +59,12 @@
       {"key": "gcp", "label": "GCP", "match": "^GCP", "note": "Google Cloud quarterly builds"}
     ],
     "confluence": {
-      "_comment": "Publish EMF Landed + one Incoming page per release line to the 'exa' folder. space_id is the numeric id; parent_id is the folder id.",
+      "_comment": "Publish EMF Landed + one Incoming page per release line to every entry in `targets` (space_id = numeric id, parent_id = folder id). space_id/parent_id are the legacy single-target fallback.",
       "enabled": true,
+      "targets": [
+        {"space_id": "1075183618", "parent_id": "3696656391"},
+        {"space_id": "3669721108", "parent_id": "3696754779"}
+      ],
       "space_id": "1075183618",
       "parent_id": "3696656391",
       "landed_title": "EMF — Landed (current build)",

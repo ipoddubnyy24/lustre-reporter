@@ -86,8 +86,10 @@ hide the EMF half entirely.
 
 ### EMF Confluence publishing
 
-The EMF Landed + Coming reports also publish to Confluence (the **"exa" folder**),
-**deliberately split so nothing is confused**:
+The EMF Landed + Coming reports also publish to Confluence — to **every folder in
+`emf.confluence.targets`** (by default the personal **"exa"** folder *and* the
+shared **EXAScaler-ENG › exa-reports** folder), **deliberately split so nothing is
+confused**:
 
 - **`EMF — Landed (current build)`** — commits already merged since the last CalVer
   release (history, *not* a forecast).
@@ -101,7 +103,7 @@ isn't" banner plus a companion-pages note. Auto-published twice daily (**00:00 /
 12:00 America/Los_Angeles**, alongside Lustre); manual via the EMF **Publish to
 Confluence** button, `GET /api/emf/publish`, or `python3 -m lustre_reporter
 --publish-now` (which does Lustre + EMF). Config under `emf.confluence`
-(`space_id`, `parent_id` = the folder, titles).
+(`targets` = the list of `{space_id, parent_id}` folders, titles).
 
 ## Requirements
 
@@ -172,7 +174,9 @@ port with `LUSTRE_REPORTER_PORT` (default 9835) — don't run the daemon and
 ## Confluence publishing (QA changelog)
 
 The Landed report publishes a **per-branch QA changelog** to Confluence — one
-page per branch in the target folder. For each *build* (tag) it shows:
+page per branch, to **every folder in `confluence.targets`** (by default the
+personal **"lustre"** folder *and* the shared **EXAScaler-ENG › lustre-reports**
+folder). For each *build* (tag) it shows:
 
 - **In build `<tag>`**: what that build added vs the previous build
   (`prev_tag..tag`). Always populated, even right after a tag is cut — which is
@@ -189,10 +193,10 @@ with linked tickets (Jira, correct host) and patches (Gerrit).
 - **Manual:** the **Publish to Confluence** button on the Landed tab, or
   `python3 -m lustre_reporter --publish-now`.
 
-Configure under `confluence` in `config.local.json` (`enabled`, `space_id`,
-`parent_id` = target folder, `title_template`, `max_builds`). Credentials reuse
-the cloud Atlassian token from `~/.jira-tool.json`. Set `confluence.enabled` to
-`false` to disable.
+Configure under `confluence` in `config.local.json` (`enabled`, `targets` = the
+list of `{space_id, parent_id}` destination folders, `title_template`,
+`max_builds`). Credentials reuse the cloud Atlassian token from
+`~/.jira-tool.json`. Set `confluence.enabled` to `false` to disable.
 
 ## Daily Slack report
 
