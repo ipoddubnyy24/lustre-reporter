@@ -611,7 +611,7 @@ function emfPublishBtn() {
   if (!(CFG.emf && CFG.emf.confluence_enabled)) return null;
   return el("button", {
     class: "btn tonal sm", style: "align-self:flex-end",
-    title: "Publish the EMF Landed + Coming pages to Confluence now",
+    title: "Publish the EMF Landed + Incoming pages to Confluence now",
     onclick: (e) => publishEmf(e.currentTarget),
   }, icon("publish"), "Publish to Confluence");
 }
