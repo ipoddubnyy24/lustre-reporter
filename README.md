@@ -30,6 +30,9 @@ it** (no click-to-load; EMF loads on first switch), with a one-click **Refresh**
 (app-bar icon or the floating button) and an optional **auto-refresh** interval
 (30 min – 24 h). Light and dark themes follow the OS.
 
+> Setting this up with an AI coding agent? Point it at **[INSTALL_FOR_AI.md](INSTALL_FOR_AI.md)** —
+> a step-by-step, self-verifying install guide written for autonomous execution.
+
 ## How it works
 
 The app is a small, **dependency-free** Python program (standard library only).
