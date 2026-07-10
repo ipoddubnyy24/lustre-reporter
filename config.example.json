@@ -48,6 +48,18 @@
       "review": ["In Review", "Awaiting Verification", "Test"],
       "progress": ["In Progress"],
       "todo": ["To Do", "Open", "Reopened", "Need Information", "Blocked External"]
+    },
+    "release_lines": [
+      {"key": "main", "label": "Main release", "match": "^ES", "note": "the ES6.3.x / ES7.x stream"},
+      {"key": "gcp", "label": "GCP", "match": "^GCP", "note": "Google Cloud quarterly builds"}
+    ],
+    "confluence": {
+      "_comment": "Publish EMF Landed + one Incoming page per release line to the 'exa' folder. space_id is the numeric id; parent_id is the folder id.",
+      "enabled": true,
+      "space_id": "1075183618",
+      "parent_id": "3696656391",
+      "landed_title": "EMF — Landed (current build)",
+      "coming_title_template": "EMF — Incoming: {line_label}"
     }
   },
   "gerrit_web_base": "https://review.whamcloud.com",

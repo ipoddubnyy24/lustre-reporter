@@ -110,7 +110,7 @@ def test_publish_all_ok(monkeypatch):
     r = emf_publish.publish_all(_cfg())
     assert r["ok"]
     assert [c["title"] for c in client.calls] == [
-        "EMF — Landed (current build)", "EMF — Coming: Main release", "EMF — Coming: GCP"]
+        "EMF — Landed (current build)", "EMF — Incoming: Main release", "EMF — Incoming: GCP"]
     assert [x["page"] for x in r["results"]] == ["landed", "coming:main", "coming:gcp"]
 
 

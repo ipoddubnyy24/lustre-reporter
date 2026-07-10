@@ -190,7 +190,7 @@ class Config:
             "space_id": "1075183618",
             "parent_id": "3696656391",
             "landed_title": "EMF — Landed (current build)",
-            "coming_title_template": "EMF — Coming: {line_label}",
+            "coming_title_template": "EMF — Incoming: {line_label}",
         },
     })
 

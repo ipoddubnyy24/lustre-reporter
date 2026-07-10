@@ -3,7 +3,7 @@
 
 Pages (in the configured "exa" folder):
   * ``EMF — Landed (current build)``    — commits since the newest CalVer release.
-  * ``EMF — Coming: <line>``  (one per release line) — the risk-weighted forecast
+  * ``EMF — Incoming: <line>``  (one per release line) — the risk-weighted forecast
     for that line's upcoming release(s); main stream and GCP get their own page.
 
 Reuses the Lustre publisher's storage-format helpers and cadence.
@@ -22,7 +22,7 @@ def _companion_note(cfg) -> str:
     """A footer listing the sibling EMF pages so a reader can tell them apart."""
     emfc = cfg.emf or {}
     conf = emfc.get("confluence") or {}
-    tmpl = conf.get("coming_title_template", "EMF — Coming: {line_label}")
+    tmpl = conf.get("coming_title_template", "EMF — Incoming: {line_label}")
     parts = [f'<strong>{_esc(conf.get("landed_title", "EMF — Landed"))}</strong> (already merged)']
     for ln in (emfc.get("release_lines") or []):
         title = tmpl.format(line_label=ln.get("label"), line=ln.get("key"))
@@ -159,7 +159,7 @@ def publish_all(cfg) -> dict:
         by_line: dict = {}
         for r in coming["releases"]:
             by_line.setdefault(r.get("line", "other"), []).append(r)
-        tmpl = conf.get("coming_title_template", "EMF — Coming: {line_label}")
+        tmpl = conf.get("coming_title_template", "EMF — Incoming: {line_label}")
         for ln in (emfc.get("release_lines") or []):
             rels = by_line.get(ln.get("key"))
             if not rels:
