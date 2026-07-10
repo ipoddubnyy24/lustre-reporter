@@ -174,6 +174,24 @@ class Config:
             "progress": ["In Progress"],
             "todo": ["To Do", "Open", "Reopened", "Need Information", "Blocked External"],
         },
+        # Release *lines* — upcoming fixVersions are classified by name (first
+        # matching `match` regex wins) so the wiki keeps the main stream and GCP
+        # clearly apart. Order here = display/publish order (main first).
+        "release_lines": [
+            {"key": "main", "label": "Main release", "match": r"^ES",
+             "note": "the ES6.3.x / ES7.x stream"},
+            {"key": "gcp", "label": "GCP", "match": r"^GCP",
+             "note": "Google Cloud quarterly builds"},
+        ],
+        # Auto-publish the EMF landed + per-line "coming" forecast to Confluence
+        # (the "exa" folder in the personal space, twice daily as the daemon).
+        "confluence": {
+            "enabled": True,
+            "space_id": "1075183618",
+            "parent_id": "3696656391",
+            "landed_title": "EMF — Landed (current build)",
+            "coming_title_template": "EMF — Coming: {line_label}",
+        },
     })
 
     def branch(self, key: str) -> Branch:

@@ -595,6 +595,26 @@ function renderEmfStability() {
   root.replaceChildren(...out);
 }
 
+async function publishEmf(btn) {
+  const saved = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = "Publishing…";
+  try {
+    const r = await api("/api/emf/publish", {}, true);
+    const results = r.results || [];
+    if (results.length && results.some((x) => x.ok))
+      snack("Confluence: " + results.map((x) => (x.title || x.page) + " " + (x.ok ? (x.action || "ok") : "failed")).join(" · "));
+    else snack("EMF publish failed: " + (r.error || (results.find((x) => x.error) || {}).error || "unknown"));
+  } catch (e) { snack("EMF publish failed: " + e); }
+  finally { btn.disabled = false; btn.innerHTML = saved; }
+}
+function emfPublishBtn() {
+  if (!(CFG.emf && CFG.emf.confluence_enabled)) return null;
+  return el("button", {
+    class: "btn tonal sm", style: "align-self:flex-end",
+    title: "Publish the EMF Landed + Coming pages to Confluence now",
+    onclick: (e) => publishEmf(e.currentTarget),
+  }, icon("publish"), "Publish to Confluence");
+}
 function renderEmfLanded() {
   const root = $("#tab-emf-landed");
   if (!root) return;
@@ -603,11 +623,14 @@ function renderEmfLanded() {
     title: "Blank = since the newest CalVer release; or type a release tag, e.g. 6.3.8-2026061600",
     onkeydown: (e) => { if (e.key === "Enter") { S.emf.tag = e.target.value.trim(); loadEmfLanded(false); } },
   });
-  const controls = el("div", { class: "controls" },
+  const children = [
     el("div", { class: "field" }, el("label", {}, "Since release"), input),
     el("button", { class: "btn filled sm", style: "align-self:flex-end", onclick: () => { S.emf.tag = input.value.trim(); loadEmfLanded(false); } }, "Apply"),
-    el("span", { class: "muted small", style: "align-self:flex-end" }, "Merged onto the release branch since the newest CalVer release."));
-  const out = [controls];
+  ];
+  const pb = emfPublishBtn();
+  if (pb) children.push(pb);
+  children.push(el("span", { class: "muted small", style: "align-self:flex-end" }, "Merged onto the release branch since the newest CalVer release."));
+  const out = [el("div", { class: "controls" }, ...children)];
   const d = EMFDATA.landed;
   if (EMFLOADING.landed || !d) { out.push(el("div", { class: "card" }, spinnerBox("Querying GitHub…"))); root.replaceChildren(...out); return; }
   if (!d.ok) { out.push(sourceBanner(d, "GitHub")); root.replaceChildren(...out); return; }
@@ -647,8 +670,10 @@ function prLinks(prs) {
 function renderEmfComing() {
   const root = $("#tab-emf-coming");
   if (!root) return;
-  const out = [el("div", { class: "controls" },
-    el("span", { class: "muted small" }, "Forecast of what lands in each upcoming release — open Jira items weighted by status and days-to-release. Green = likely, red = unlikely.")) ];
+  const cchildren = [el("span", { class: "muted small" }, "Forecast of what lands in each upcoming release — open Jira items weighted by status and days-to-release. Green = likely, red = unlikely.")];
+  const cpb = emfPublishBtn();
+  if (cpb) cchildren.unshift(cpb);
+  const out = [el("div", { class: "controls" }, ...cchildren)];
   const d = EMFDATA.coming;
   if (EMFLOADING.coming || !d) { out.push(el("div", { class: "card" }, spinnerBox("Fetching Jira items & release dates…"))); root.replaceChildren(...out); return; }
   if (!d.ok) { out.push(sourceBanner(d, "Jira")); root.replaceChildren(...out); return; }
@@ -667,6 +692,7 @@ function comingCard(r) {
   const pct = r.total ? Math.round((r.expected / r.total) * 100) : 0;
   const card = el("div", { class: "card" },
     el("h2", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" },
+      r.line_label ? el("span", { class: "chip primary", title: r.line_note || "" }, r.line_label) : null,
       r.name, el("span", { class: "chip tertiary" }, fmtDate(r.release_date)), daysChip()));
   if (!r.items_ok) { card.append(sourceBanner({ kind: "error", error: r.items_error }, "Jira")); return card; }
   card.append(el("div", { class: "card-sub", style: "margin-top:8px" },

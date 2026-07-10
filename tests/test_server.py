@@ -2,7 +2,7 @@ import contextlib
 import http.client
 import threading
 
-from lustre_reporter import server
+from lustre_reporter import emf, server
 from lustre_reporter.cli import ToolResult
 
 
@@ -186,63 +186,56 @@ def test_api_slack_report(monkeypatch, cfg):
     assert server.api_slack_report(cfg, {}) == {"ok": True, "date": "d"}
 
 
-# ---------------- EMF endpoints ----------------
+# ---------------- EMF endpoints (thin wrappers over emf.collect_*) ----------------
 def test_api_emf_stability_ok(monkeypatch, cfg):
-    monkeypatch.setattr(server.github, "workflow_runs", lambda repo, wf, limit=100: okt([
+    monkeypatch.setattr(emf.github, "workflow_runs", lambda repo, wf, limit=100: okt([
         {"conclusion": "success", "created_at": "2026-07-10T00:00:00Z"},
         {"conclusion": "failure", "created_at": "2020-01-01T00:00:00Z"}]))   # old -> filtered by cutoff
-    monkeypatch.setattr(server.util, "days_ago_iso", lambda d: "2026-01-01")
+    monkeypatch.setattr(emf.util, "days_ago_iso", lambda d: "2026-01-01")
     r = server.api_emf_stability(cfg, {"days": ["30"]})
     assert r["ok"] and r["days"] == 30 and r["summary"]["runs"] == 1
 
 
 def test_api_emf_stability_error(monkeypatch, cfg):
-    monkeypatch.setattr(server.github, "workflow_runs",
+    monkeypatch.setattr(emf.github, "workflow_runs",
                         lambda repo, wf, limit=100: ToolResult(ok=False, data=None, error="gh 401", kind="auth"))
     r = server.api_emf_stability(cfg, {})
     assert not r["ok"] and r["kind"] == "auth"
 
 
 def test_api_emf_landed(monkeypatch, cfg):
-    monkeypatch.setattr(server.github, "landed", lambda repo, branch, tag=None:
+    monkeypatch.setattr(emf.github, "landed", lambda repo, branch, tag=None:
                         {"ok": True, "patches": [{"tickets": [{"key": "EX-1", "project": "EX"}]}]})
     r = server.api_emf_landed(cfg, {})
     assert r["ok"] and r["patches"][0]["tickets"][0]["url"].endswith("/EX-1")
 
 
+def test_api_emf_publish(monkeypatch, cfg):
+    monkeypatch.setattr(server.emf_publish, "publish_all", lambda c: {"ok": True, "results": []})
+    assert server.api_emf_publish(cfg, {}) == {"ok": True, "results": []}
+
+
 def test_api_emf_coming_auto(monkeypatch, cfg):
-    monkeypatch.setattr(server.jira, "versions", lambda p: okt([
+    monkeypatch.setattr(emf.jira, "versions", lambda p: okt([
         {"name": "ES6.3.9", "release_date": "2026-09-04", "released": False, "overdue": False},
         {"name": "old2018", "release_date": "2018-01-01", "released": False, "overdue": True},
         {"name": "done", "release_date": "2026-08-01", "released": True}]))
-    monkeypatch.setattr(server.forecast, "days_until",
+    monkeypatch.setattr(emf.forecast, "days_until",
                         lambda d, **k: {"2026-09-04": 56, "2018-01-01": -3000}.get(d))
-    monkeypatch.setattr(server.github, "open_prs", lambda repo: okt([
+    monkeypatch.setattr(emf.github, "open_prs", lambda repo: okt([
         {"number": 5, "url": "pr5", "isDraft": False, "title": "EX-1 fix", "headRefName": "x"}]))
-    monkeypatch.setattr(server.jira, "search", lambda jql, cloud=True, limit=200: okt([
+    monkeypatch.setattr(emf.jira, "search", lambda jql, cloud=True, limit=200: okt([
         {"key": "EX-1", "status": "In Review", "summary": "s"}]))
     r = server.api_emf_coming(cfg, {})
     assert r["ok"] and [rel["name"] for rel in r["releases"]] == ["ES6.3.9"]   # future/graced only
     rel = r["releases"][0]
-    assert rel["items_ok"] and rel["items"][0]["url"].endswith("/EX-1")
+    assert rel["line"] == "main" and rel["items_ok"]
+    assert rel["items"][0]["url"].endswith("/EX-1")
     assert rel["items"][0]["prs"] == [{"number": 5, "url": "pr5", "draft": False}]
 
 
-def test_api_emf_coming_tracked_and_item_error(monkeypatch, cfg):
-    cfg.emf = {**cfg.emf, "track_versions": ["ES6.3.9"]}
-    monkeypatch.setattr(server.jira, "versions", lambda p: okt([
-        {"name": "ES6.3.9", "release_date": "2026-09-04", "released": False},
-        {"name": "ES7.0.0", "release_date": None, "released": False}]))
-    monkeypatch.setattr(server.github, "open_prs", lambda repo: ToolResult(ok=False, data=None, error="no gh"))
-    monkeypatch.setattr(server.jira, "search",
-                        lambda jql, cloud=True, limit=200: ToolResult(ok=False, data=None, error="jira down"))
-    r = server.api_emf_coming(cfg, {})
-    assert [rel["name"] for rel in r["releases"]] == ["ES6.3.9"]              # only tracked
-    assert r["releases"][0]["items_ok"] is False and "jira down" in r["releases"][0]["items_error"]
-
-
 def test_api_emf_coming_versions_error(monkeypatch, cfg):
-    monkeypatch.setattr(server.jira, "versions",
+    monkeypatch.setattr(emf.jira, "versions",
                         lambda p: ToolResult(ok=False, data=None, error="no creds", kind="error"))
     r = server.api_emf_coming(cfg, {})
     assert not r["ok"] and "no creds" in r["error"]

@@ -5,8 +5,13 @@ from datetime import datetime
 
 import pytest
 
+import lustre_reporter.emf_publish as emf_pub
 import lustre_reporter.publish as pub
 from lustre_reporter import __main__ as main_mod
+
+
+def _no_emf_confluence(cfg):
+    cfg.emf = {**cfg.emf, "confluence": {"enabled": False}}
 
 
 # ---------------- ensure_cert ----------------
@@ -45,8 +50,20 @@ def test_ensure_cert_openssl_fails(monkeypatch, tmp_path):
 
 
 # ---------------- scheduler ----------------
+def test_confluence_targets(cfg):
+    labels = lambda c: [name for name, _ in main_mod._confluence_targets(c)]
+    assert labels(cfg) == ["lustre", "emf"]                       # both on by default
+    cfg.confluence = {"enabled": False}
+    assert labels(cfg) == ["emf"]                                 # EMF only
+    _no_emf_confluence(cfg)
+    assert labels(cfg) == []                                      # both off
+    cfg.confluence = {"enabled": True, "auto_publish": True}
+    assert labels(cfg) == ["lustre"]                              # Lustre only
+
+
 def test_scheduler_disabled(cfg):
     cfg.confluence = {"enabled": False}
+    _no_emf_confluence(cfg)
     before = threading.active_count()
     assert main_mod._start_confluence_scheduler(cfg) is None
     assert threading.active_count() == before
@@ -54,6 +71,7 @@ def test_scheduler_disabled(cfg):
 
 def test_scheduler_auto_off(cfg):
     cfg.confluence = {"enabled": True, "auto_publish": False}
+    _no_emf_confluence(cfg)
     before = threading.active_count()
     main_mod._start_confluence_scheduler(cfg)
     assert threading.active_count() == before
@@ -63,7 +81,7 @@ def test_scheduler_enabled_starts_thread(monkeypatch, cfg):
     # far-future next update so the daemon thread just sleeps harmlessly
     monkeypatch.setattr(pub, "now_pt", lambda: datetime(2026, 1, 1))
     monkeypatch.setattr(pub, "next_update_pt", lambda now=None: datetime(2100, 1, 1))
-    main_mod._start_confluence_scheduler(cfg)
+    main_mod._start_confluence_scheduler(cfg)                     # both targets enabled by default
     assert any(t.name == "confluence-scheduler" for t in threading.enumerate())
 
 
@@ -87,12 +105,20 @@ def test_slack_scheduler_enabled_starts_thread(monkeypatch, cfg):
 # ---------------- main() ----------------
 def test_main_publish_now_ok(monkeypatch):
     monkeypatch.setattr(pub, "publish_all", lambda c: {"ok": True})
-    assert main_mod.main(["--publish-now"]) == 0
+    monkeypatch.setattr(emf_pub, "publish_all", lambda c: {"ok": False, "error": "emf off"})
+    assert main_mod.main(["--publish-now"]) == 0          # Lustre ok -> overall 0
 
 
 def test_main_publish_now_fail(monkeypatch):
     monkeypatch.setattr(pub, "publish_all", lambda c: {"ok": False, "error": "x"})
-    assert main_mod.main(["--publish-now"]) == 1
+    monkeypatch.setattr(emf_pub, "publish_all", lambda c: {"ok": False, "error": "y"})
+    assert main_mod.main(["--publish-now"]) == 1          # neither published
+
+
+def test_main_publish_now_emf_only(monkeypatch):
+    monkeypatch.setattr(pub, "publish_all", lambda c: {"ok": False, "error": "lustre off"})
+    monkeypatch.setattr(emf_pub, "publish_all", lambda c: {"ok": True})
+    assert main_mod.main(["--publish-now"]) == 0          # EMF ok -> overall 0
 
 
 def test_main_slack_now_ok(monkeypatch):

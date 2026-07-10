@@ -81,6 +81,25 @@ status→tier mapping, which versions to track, and the grace window are all
 configurable under `emf` in `config.local.json`; set `emf.enabled` to `false` to
 hide the EMF half entirely.
 
+### EMF Confluence publishing
+
+The EMF Landed + Coming reports also publish to Confluence (the **"exa" folder**),
+**deliberately split so nothing is confused**:
+
+- **`EMF — Landed (current build)`** — commits already merged since the last CalVer
+  release (history, *not* a forecast).
+- **`EMF — Coming: Main release`** — forecast for the ES6.3.x/ES7.x stream.
+- **`EMF — Coming: GCP`** — forecast for the Google Cloud quarterly.
+
+Upcoming releases are classified into **release lines** (config `emf.release_lines`,
+by fixVersion name) and each line gets its own page, so *landed* vs *coming* and
+*main* vs *GCP* are never mixed. Each page carries a plain "what this is / what it
+isn't" banner plus a companion-pages note. Auto-published twice daily (**00:00 /
+12:00 America/Los_Angeles**, alongside Lustre); manual via the EMF **Publish to
+Confluence** button, `GET /api/emf/publish`, or `python3 -m lustre_reporter
+--publish-now` (which does Lustre + EMF). Config under `emf.confluence`
+(`space_id`, `parent_id` = the folder, titles).
+
 ## Requirements
 
 - Python 3.9+
@@ -261,6 +280,7 @@ The UI is served from `static/` and calls these JSON endpoints (all `GET`;
 | `/api/emf/stability?days=30` | EMF nightly CI pass-rate trend (GitHub Actions) |
 | `/api/emf/landed?tag=…` | EMF commits since the latest (or given) CalVer release |
 | `/api/emf/coming` | Risk-weighted forecast per upcoming release (Jira × bands) |
+| `/api/emf/publish` | Push the EMF Landed + per-line Coming pages to Confluence now |
 
 ## Tests
 

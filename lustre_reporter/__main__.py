@@ -69,10 +69,23 @@ def ensure_cert(cert_dir: str) -> tuple[Path, Path]:
     return cert, key
 
 
-def _start_confluence_scheduler(cfg) -> None:
-    """Background thread that publishes the changelog at 00:00 & 12:00 Pacific."""
+def _confluence_targets(cfg) -> list:
+    """(label, publish_all fn) for each enabled Confluence publisher (Lustre, EMF)."""
+    from . import emf_publish, publish
+    targets = []
     conf = getattr(cfg, "confluence", None) or {}
-    if not (conf.get("enabled") and conf.get("auto_publish", True)):
+    if conf.get("enabled") and conf.get("auto_publish", True):
+        targets.append(("lustre", publish.publish_all))
+    emfc = getattr(cfg, "emf", None) or {}
+    if emfc.get("enabled") and (emfc.get("confluence") or {}).get("enabled"):
+        targets.append(("emf", emf_publish.publish_all))
+    return targets
+
+
+def _start_confluence_scheduler(cfg) -> None:
+    """Background thread that publishes the Lustre + EMF pages at 00:00 & 12:00 Pacific."""
+    targets = _confluence_targets(cfg)
+    if not targets:
         return
     import threading
     import time
@@ -82,16 +95,18 @@ def _start_confluence_scheduler(cfg) -> None:
         while True:
             now = publish.now_pt()
             time.sleep(max((publish.next_update_pt(now) - now).total_seconds(), 1))
-            try:
-                res = publish.publish_all(cfg)
-                print(f"[confluence] auto-publish {publish.now_pt():%Y-%m-%d %H:%M %Z}: "
-                      f"{'ok' if res.get('ok') else 'FAILED ' + str(res.get('error') or res.get('results'))}",
-                      flush=True)
-            except Exception:  # noqa: BLE001
-                traceback.print_exc()
+            for label, fn in targets:
+                try:
+                    res = fn(cfg)
+                    print(f"[confluence:{label}] auto-publish {publish.now_pt():%Y-%m-%d %H:%M %Z}: "
+                          f"{'ok' if res.get('ok') else 'FAILED ' + str(res.get('error') or res.get('results'))}",
+                          flush=True)
+                except Exception:  # noqa: BLE001
+                    traceback.print_exc()
 
     threading.Thread(target=loop, name="confluence-scheduler", daemon=True).start()
-    print(f"  Confluence auto-publish ON → next {publish.next_update_pt():%Y-%m-%d %H:%M} PT",
+    labels = ", ".join(label for label, _ in targets)
+    print(f"  Confluence auto-publish ON ({labels}) → next {publish.next_update_pt():%Y-%m-%d %H:%M} PT",
           flush=True)
 
 
@@ -146,10 +161,10 @@ def main(argv: list[str] | None = None) -> int:
     cfg.port = args.port
 
     if args.publish_now:
-        from . import publish
-        res = publish.publish_all(cfg)
+        from . import emf_publish, publish
+        res = {"lustre": publish.publish_all(cfg), "emf": emf_publish.publish_all(cfg)}
         print(json.dumps(res, indent=2))
-        return 0 if res.get("ok") else 1
+        return 0 if (res["lustre"].get("ok") or res["emf"].get("ok")) else 1
 
     if args.slack_now:
         from . import daily_report

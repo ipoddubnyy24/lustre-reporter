@@ -64,6 +64,8 @@ def test_load_config_overrides(monkeypatch, tmp_path):
     assert c.slack["hour"] == 9  # unspecified key keeps default
     assert c.emf["enabled"] is False and c.emf["release_branch"] == "7.0.0"
     assert c.emf["jira_project"] == "EX"  # unspecified key keeps default
+    assert c.emf["confluence"]["space_id"] == "1075183618"  # nested defaults kept
+    assert [ln["key"] for ln in c.emf["release_lines"]] == ["main", "gcp"]
 
 
 def test_load_config_invalid_json(monkeypatch, tmp_path):
