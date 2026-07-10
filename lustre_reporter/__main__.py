@@ -126,7 +126,7 @@ def _start_slack_scheduler(cfg) -> None:
 def main(argv: list[str] | None = None) -> int:
     cfg = load_config()
     parser = argparse.ArgumentParser(
-        prog="lustre-reporter",
+        prog="exa-reporter",
         description="Local dashboard for ExaScaler Lustre branch health.",
     )
     parser.add_argument("--host", default=cfg.host, help="bind host (default: localhost)")
@@ -168,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
 
     url = f"https://{cfg.host}:{cfg.port}/"
-    print(f"Lustre Reporter → {url}", flush=True)
+    print(f"EXA Reporter → {url}", flush=True)
     print("  (self-signed TLS: accept the one-time browser warning)", flush=True)
     print("  Ctrl-C to stop.", flush=True)
     if args.open:

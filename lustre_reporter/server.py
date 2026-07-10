@@ -267,7 +267,7 @@ _ROUTES = {
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "LustreReporter/0.1"
+    server_version = "EXAReporter/0.1"
     cfg: Config = None  # type: ignore[assignment]
     cache: TTLCache = None  # type: ignore[assignment]
 

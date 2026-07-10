@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Run Lustre Reporter as a macOS background service (launchd LaunchAgent).
+# Run EXA Reporter as a macOS background service (launchd LaunchAgent).
 #
-# Usage: scripts/lustre_reporter_daemon.sh <command>
+# Usage: scripts/exa_reporter_daemon.sh <command>
 #   start      install (if needed) + start; also autostarts at login
 #   stop       stop the service (agent stays installed)
 #   restart    restart the running service
@@ -15,7 +15,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${LUSTRE_REPORTER_PORT:-9835}"
-LABEL="${LR_DAEMON_LABEL:-com.ddn.lustre-reporter}"
+LABEL="${LR_DAEMON_LABEL:-com.ddn.exa-reporter}"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG_OUT="$HOME/Library/Logs/$LABEL.out.log"
 LOG_ERR="$HOME/Library/Logs/$LABEL.err.log"

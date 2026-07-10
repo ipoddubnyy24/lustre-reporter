@@ -212,7 +212,7 @@ def test_http_integration(monkeypatch, cfg):
     with _running(cfg) as port:
         assert _get(port, "/api/config")[0] == 200
         s, body = _get(port, "/")
-        assert s == 200 and b"Lustre Reporter" in body
+        assert s == 200 and b"EXA Reporter" in body
         assert _get(port, "/index.html")[0] == 200
         assert _get(port, "/static/style.css")[0] == 200
         assert _get(port, "/static/app.js")[0] == 200

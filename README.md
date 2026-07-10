@@ -87,18 +87,18 @@ Login Items**, so add **Lustre Reporter** there to launch at login (bundle id
 
 For a headless launchd service (no Dock icon, survives crashes, autostarts at
 login), use the control script — a per-user LaunchAgent labeled
-`com.ddn.lustre-reporter`:
+`com.ddn.exa-reporter`:
 
 ```bash
-./scripts/lustre_reporter_daemon.sh start       # install + run (also starts at login)
-./scripts/lustre_reporter_daemon.sh status      # loaded? PID? last exit? port listening?
-./scripts/lustre_reporter_daemon.sh restart
-./scripts/lustre_reporter_daemon.sh stop         # stop now (agent stays; returns at next login)
-./scripts/lustre_reporter_daemon.sh uninstall    # stop + remove the agent (disables autostart)
-./scripts/lustre_reporter_daemon.sh logs [N]     # tail stdout/stderr
+./scripts/exa_reporter_daemon.sh start       # install + run (also starts at login)
+./scripts/exa_reporter_daemon.sh status      # loaded? PID? last exit? port listening?
+./scripts/exa_reporter_daemon.sh restart
+./scripts/exa_reporter_daemon.sh stop         # stop now (agent stays; returns at next login)
+./scripts/exa_reporter_daemon.sh uninstall    # stop + remove the agent (disables autostart)
+./scripts/exa_reporter_daemon.sh logs [N]     # tail stdout/stderr
 ```
 
-Logs are written to `~/Library/Logs/com.ddn.lustre-reporter.*.log`. Override the
+Logs are written to `~/Library/Logs/com.ddn.exa-reporter.*.log`. Override the
 port with `LUSTRE_REPORTER_PORT` (default 9835) — don't run the daemon and
 `run.sh` on the same port simultaneously.
 
@@ -151,7 +151,7 @@ token (`chat:write`) plus a `channel`:
 "slack": { "enabled": true, "bot_token": "xoxb-…", "channel": "#lustre-builds" }
 ```
 
-Then `./scripts/lustre_reporter_daemon.sh restart` to pick up the schedule. Set
+Then `./scripts/exa_reporter_daemon.sh restart` to pick up the schedule. Set
 `slack.enabled` to `false` (the default) to disable.
 
 ## Enabling the build-stability report (Maloo)
