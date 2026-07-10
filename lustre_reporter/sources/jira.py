@@ -8,6 +8,7 @@ the DDN cloud instance (``-I cloud``). The caller decides which via the
 from __future__ import annotations
 
 from ..cli import ToolResult, run_json
+from . import atlassian
 
 _JIRA = "jira"
 _FIELDS = "key,summary,status,priority,assignee,reporter,labels,fixVersions,issuetype,resolution,updated,created"
@@ -72,3 +73,23 @@ def search(jql: str, *, cloud: bool = False, limit: int = 50) -> ToolResult:
     if not isinstance(issues, list):
         issues = []
     return ToolResult(ok=True, data=[normalize(i) for i in issues])
+
+
+def versions(project: str) -> ToolResult:
+    """Project fixVersions with release dates (Jira Cloud REST).
+
+    Returns [{name, release_date (YYYY-MM-DD|None), released, overdue}].
+    """
+    try:
+        data = atlassian.cloud_get(f"/rest/api/3/project/{project}/versions")
+    except atlassian.AtlassianError as exc:
+        return ToolResult(ok=False, data=None, error=str(exc), kind="error")
+    if not isinstance(data, list):
+        return ToolResult(ok=False, data=None, error="unexpected versions payload", kind="error")
+    out = [{
+        "name": v.get("name"),
+        "release_date": v.get("releaseDate"),
+        "released": bool(v.get("released")),
+        "overdue": bool(v.get("overdue")),
+    } for v in data if isinstance(v, dict)]
+    return ToolResult(ok=True, data=out)

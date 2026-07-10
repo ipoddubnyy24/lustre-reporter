@@ -144,6 +144,38 @@ class Config:
         "days": 14,
     })
 
+    # EMF (EXAScaler Management Framework) reporting — GitHub + Jira driven.
+    # Build stability from a GitHub Actions workflow; "landed" from CalVer
+    # GitHub releases; "coming" forecast from EX Jira items + fixVersion dates.
+    emf: dict = field(default_factory=lambda: {
+        "enabled": True,
+        "repo": "whamcloud/exascaler-management-framework",
+        "release_branch": "6.3.8",
+        "nightly_workflow": "nightly-build-6_3_x.yml",
+        "stability_days": 30,
+        "jira_project": "EX",
+        # Upcoming fixVersions to forecast; empty => auto (unreleased EX versions
+        # that carry a date no more than `coming_grace_days` in the past — this
+        # drops ancient never-closed versions like 2018 "ES5.0").
+        "track_versions": [],
+        "coming_grace_days": 30,
+        # P(item lands in its target release) by days-to-release band × status
+        # tier. First band whose max_days >= days_remaining wins (overdue => 0).
+        "risk_bands": [
+            {"max_days": 0, "todo": 0.02, "progress": 0.30, "review": 0.75},
+            {"max_days": 4, "todo": 0.05, "progress": 0.45, "review": 0.85},
+            {"max_days": 10, "todo": 0.10, "progress": 0.60, "review": 0.90},
+            {"max_days": 30, "todo": 0.35, "progress": 0.75, "review": 0.92},
+            {"max_days": 9999, "todo": 0.60, "progress": 0.85, "review": 0.95},
+        ],
+        # Jira status name -> tier used by risk_bands (else falls back by category).
+        "status_tiers": {
+            "review": ["In Review", "Awaiting Verification", "Test"],
+            "progress": ["In Progress"],
+            "todo": ["To Do", "Open", "Reopened", "Need Information", "Blocked External"],
+        },
+    })
+
     def branch(self, key: str) -> Branch:
         for b in self.branches:
             if b.key == key:
@@ -184,6 +216,8 @@ def _apply_overrides(cfg: Config, data: dict[str, Any]) -> None:
         cfg.confluence.update(data["confluence"])
     if isinstance(data.get("slack"), dict):
         cfg.slack.update(data["slack"])
+    if isinstance(data.get("emf"), dict):
+        cfg.emf.update(data["emf"])
 
 
 def _config_candidates() -> list[Path]:

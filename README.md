@@ -1,8 +1,14 @@
-# Lustre Reporter
+# EXA Reporter
 
-A local, web-based dashboard for the health of the **ExaScaler Lustre**
-release branches — **ES6 (`b_es6_0`)** and **ES7 (`b_es7_0`)**. It answers three
-questions the porting team asks every week:
+A local, web-based dashboard for **ExaScaler** engineering health, split into two
+products via a top-level **Lustre / EMF** switch:
+
+- **Lustre** — the ExaScaler Lustre release branches **ES6 (`b_es6_0`)** and
+  **ES7 (`b_es7_0`)**, sourced from Gerrit/Maloo.
+- **EMF** — the **EXAScaler Management Framework**
+  (`whamcloud/exascaler-management-framework`), sourced from GitHub + Jira.
+
+**Lustre** answers three questions the porting team asks every week:
 
 1. **How stable are the recent nightly builds?** — pass-rate trend over time,
    with drill-down into any period and the top failing tests.
@@ -13,12 +19,16 @@ questions the porting team asks every week:
    ticket*, cross-referenced with the DDN/EX/LU tickets, with one-click **"ping
    the branch owner on Teams"** (Li Xi for ES6, Marc-Andre Vef for ES7).
 
+**EMF** answers the parallel questions from GitHub + Jira: build stability, what
+landed since the last CalVer release, and — uniquely — a **risk-weighted forecast
+of what's coming** in each upcoming release (see [EMF reports](#emf-reports-github--jira)).
+
 It runs entirely on your machine and serves over **https://localhost:9835**.
 
-The UI is a Material Design dashboard: **all three reports load as soon as you
-open it** (no click-to-load), with a one-click **Refresh** (app-bar icon or the
-floating button) and an optional **auto-refresh** interval. Light and dark
-themes follow the OS.
+The UI is a Material Design dashboard: **every report loads as soon as you open
+it** (no click-to-load; EMF loads on first switch), with a one-click **Refresh**
+(app-bar icon or the floating button) and an optional **auto-refresh** interval
+(30 min – 24 h). Light and dark themes follow the OS.
 
 ## How it works
 
@@ -39,6 +49,38 @@ itself stores no secrets.
 > `lustre-b_es7_0`), configure the `jenkins` CLI and wire a source module
 > alongside `sources/maloo.py`.
 
+## EMF reports (GitHub + Jira)
+
+Switch to **EMF** in the top bar for the EXAScaler Management Framework. It needs
+the **`gh`** CLI on `PATH` (authenticated — `gh auth status`) for GitHub, and the
+cloud Atlassian token (the same `~/.jira-tool.json` one Confluence uses) for Jira.
+
+| EMF report | Source | What it shows |
+|---|---|---|
+| Build stability | GitHub Actions (`nightly-build-6_3_x.yml`) | pass-rate trend of the nightly workflow |
+| Landed | GitHub Releases (CalVer) + commit compare | what merged onto the release branch since the newest CalVer release (`6.3.8-YYYYMMDDNN`) |
+| Coming | EX Jira items + `fixVersion` release dates | a **risk-weighted forecast** of what lands in each upcoming release |
+
+**The "Coming" forecast.** For each upcoming release (an unreleased EX
+`fixVersion` that carries a date), each open item is scored by how advanced it is
+(status tier) and how much runway remains (days to release), then summed into an
+expected landing count:
+
+| days to release | To Do | In Progress | In Review |
+|---|---|---|---|
+| overdue (≤ 0) | 2% | 30% | 75% |
+| 1–4 | 5% | 45% | 85% |
+| **5–10** | **10%** | **60%** | **90%** |
+| 11–30 | 35% | 75% | 92% |
+| > 30 | 60% | 85% | 95% |
+
+Open GitHub PRs whose title/branch reference the ticket are linked in as
+corroboration. Release **dates come from the Jira `fixVersion`** (cleaner and more
+current than the human-maintained Confluence release timeline). The bands, the
+status→tier mapping, which versions to track, and the grace window are all
+configurable under `emf` in `config.local.json`; set `emf.enabled` to `false` to
+hide the EMF half entirely.
+
 ## Requirements
 
 - Python 3.9+
@@ -47,6 +89,9 @@ itself stores no secrets.
   cd ~/work/src/llm_jira && ./install.sh
   ```
 - `openssl` (used once to generate the self-signed localhost certificate).
+- For the **EMF** reports: the GitHub CLI **`gh`** on `PATH`, authenticated
+  (`gh auth status`), with read access to `whamcloud/exascaler-management-framework`.
+  (Lustre-only users can set `emf.enabled` to `false` and skip this.)
 
 ## Run
 
@@ -213,6 +258,9 @@ The UI is served from `static/` and calls these JSON endpoints (all `GET`;
 | `/api/ping?branch=es6&subject=…&url=…&ticket=LU-1` | Draft + Teams/mailto links |
 | `/api/publish` | Push the QA changelog to Confluence now |
 | `/api/slack-report` | Post the daily build-health report to Slack now |
+| `/api/emf/stability?days=30` | EMF nightly CI pass-rate trend (GitHub Actions) |
+| `/api/emf/landed?tag=…` | EMF commits since the latest (or given) CalVer release |
+| `/api/emf/coming` | Risk-weighted forecast per upcoming release (Jira × bands) |
 
 ## Tests
 

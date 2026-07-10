@@ -12,28 +12,21 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
+
+from . import atlassian
+from .atlassian import AtlassianError
 
 
 class ConfluenceError(RuntimeError):
     pass
 
 
-def _load_cloud_creds() -> tuple[str, str, str]:
-    path = Path.home() / ".jira-tool.json"
-    if not path.exists():
-        raise ConfluenceError("~/.jira-tool.json not found (need Atlassian cloud email + token)")
-    cloud = (json.loads(path.read_text()).get("instances") or {}).get("cloud") or {}
-    auth = cloud.get("auth") or {}
-    server, email, token = (cloud.get("server") or "").rstrip("/"), auth.get("email"), auth.get("token")
-    if not (server and email and token):
-        raise ConfluenceError("~/.jira-tool.json 'cloud' instance missing server/email/token")
-    return server, email, token
-
-
 class Confluence:
     def __init__(self, site: str | None = None):
-        server, email, token = _load_cloud_creds()
+        try:
+            server, email, token = atlassian.cloud_creds()
+        except AtlassianError as exc:
+            raise ConfluenceError(str(exc)) from exc
         self.base = (site or server).rstrip("/") + "/wiki"
         self._auth = base64.b64encode(f"{email}:{token}".encode()).decode()
 

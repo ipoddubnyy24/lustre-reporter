@@ -1,5 +1,4 @@
 import io
-import json
 import urllib.error
 
 import pytest
@@ -8,40 +7,8 @@ from lustre_reporter.sources import confluence
 from lustre_reporter.sources.confluence import Confluence, ConfluenceError
 
 
-def _creds(tmp_path, data):
-    (tmp_path / ".jira-tool.json").write_text(json.dumps(data))
-    return tmp_path
-
-
-def test_load_creds_ok(monkeypatch, tmp_path):
-    _creds(tmp_path, {"instances": {"cloud": {"server": "https://s/",
-                                              "auth": {"email": "e", "token": "t"}}}})
-    monkeypatch.setattr(confluence.Path, "home", lambda: tmp_path)
-    assert confluence._load_cloud_creds() == ("https://s", "e", "t")
-
-
-def test_load_creds_missing_file(monkeypatch, tmp_path):
-    monkeypatch.setattr(confluence.Path, "home", lambda: tmp_path)
-    with pytest.raises(ConfluenceError):
-        confluence._load_cloud_creds()
-
-
-def test_load_creds_no_cloud(monkeypatch, tmp_path):
-    _creds(tmp_path, {"instances": {}})
-    monkeypatch.setattr(confluence.Path, "home", lambda: tmp_path)
-    with pytest.raises(ConfluenceError):
-        confluence._load_cloud_creds()
-
-
-def test_load_creds_missing_fields(monkeypatch, tmp_path):
-    _creds(tmp_path, {"instances": {"cloud": {"auth": {"email": "e"}}}})
-    monkeypatch.setattr(confluence.Path, "home", lambda: tmp_path)
-    with pytest.raises(ConfluenceError):
-        confluence._load_cloud_creds()
-
-
 def _client(monkeypatch):
-    monkeypatch.setattr(confluence, "_load_cloud_creds", lambda: ("https://s", "e", "t"))
+    monkeypatch.setattr(confluence.atlassian, "cloud_creds", lambda: ("https://s", "e", "t"))
     return Confluence()
 
 
@@ -50,8 +17,16 @@ def test_init_base(monkeypatch):
 
 
 def test_init_site_override(monkeypatch):
-    monkeypatch.setattr(confluence, "_load_cloud_creds", lambda: ("https://s", "e", "t"))
+    monkeypatch.setattr(confluence.atlassian, "cloud_creds", lambda: ("https://s", "e", "t"))
     assert Confluence("https://other/").base == "https://other/wiki"
+
+
+def test_init_wraps_atlassian_error(monkeypatch):
+    def boom():
+        raise confluence.AtlassianError("no creds")
+    monkeypatch.setattr(confluence.atlassian, "cloud_creds", boom)
+    with pytest.raises(ConfluenceError, match="no creds"):
+        Confluence()
 
 
 def test_find_page(monkeypatch):

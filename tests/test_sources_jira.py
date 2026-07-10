@@ -84,3 +84,26 @@ def test_flatten_edge_cases():
 def test_search_scalar_payload(monkeypatch):
     monkeypatch.setattr(jira, "run_json", lambda *a, **k: ToolResult(ok=True, data=42))
     assert jira.search("q").data == []
+
+
+def test_versions_ok(monkeypatch):
+    monkeypatch.setattr(jira.atlassian, "cloud_get", lambda path: [
+        {"name": "ES6.3.9", "releaseDate": "2026-09-04", "released": False, "overdue": False},
+        {"name": "old", "released": True}, "junk"])
+    r = jira.versions("EX")
+    assert r.ok and len(r.data) == 2
+    assert r.data[0] == {"name": "ES6.3.9", "release_date": "2026-09-04",
+                         "released": False, "overdue": False}
+
+
+def test_versions_error(monkeypatch):
+    def boom(path):
+        raise jira.atlassian.AtlassianError("boom")
+    monkeypatch.setattr(jira.atlassian, "cloud_get", boom)
+    r = jira.versions("EX")
+    assert not r.ok and "boom" in r.error
+
+
+def test_versions_bad_payload(monkeypatch):
+    monkeypatch.setattr(jira.atlassian, "cloud_get", lambda path: {"not": "a list"})
+    assert not jira.versions("EX").ok

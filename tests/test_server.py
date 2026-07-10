@@ -46,6 +46,8 @@ def test_api_config(cfg):
     assert [b["key"] for b in c["branches"]] == ["es6", "es7"]
     assert c["confluence_enabled"] is True and "today" in c
     assert c["defaults"]["landed_days"] == 7
+    assert c["emf_enabled"] is True and c["emf"]["jira_project"] == "EX"
+    assert c["emf"]["repo"].endswith("exascaler-management-framework")
 
 
 def test_api_stability_ok(monkeypatch, cfg):
@@ -182,6 +184,68 @@ def test_api_publish(monkeypatch, cfg):
 def test_api_slack_report(monkeypatch, cfg):
     monkeypatch.setattr(server.daily_report, "send_daily", lambda c: {"ok": True, "date": "d"})
     assert server.api_slack_report(cfg, {}) == {"ok": True, "date": "d"}
+
+
+# ---------------- EMF endpoints ----------------
+def test_api_emf_stability_ok(monkeypatch, cfg):
+    monkeypatch.setattr(server.github, "workflow_runs", lambda repo, wf, limit=100: okt([
+        {"conclusion": "success", "created_at": "2026-07-10T00:00:00Z"},
+        {"conclusion": "failure", "created_at": "2020-01-01T00:00:00Z"}]))   # old -> filtered by cutoff
+    monkeypatch.setattr(server.util, "days_ago_iso", lambda d: "2026-01-01")
+    r = server.api_emf_stability(cfg, {"days": ["30"]})
+    assert r["ok"] and r["days"] == 30 and r["summary"]["runs"] == 1
+
+
+def test_api_emf_stability_error(monkeypatch, cfg):
+    monkeypatch.setattr(server.github, "workflow_runs",
+                        lambda repo, wf, limit=100: ToolResult(ok=False, data=None, error="gh 401", kind="auth"))
+    r = server.api_emf_stability(cfg, {})
+    assert not r["ok"] and r["kind"] == "auth"
+
+
+def test_api_emf_landed(monkeypatch, cfg):
+    monkeypatch.setattr(server.github, "landed", lambda repo, branch, tag=None:
+                        {"ok": True, "patches": [{"tickets": [{"key": "EX-1", "project": "EX"}]}]})
+    r = server.api_emf_landed(cfg, {})
+    assert r["ok"] and r["patches"][0]["tickets"][0]["url"].endswith("/EX-1")
+
+
+def test_api_emf_coming_auto(monkeypatch, cfg):
+    monkeypatch.setattr(server.jira, "versions", lambda p: okt([
+        {"name": "ES6.3.9", "release_date": "2026-09-04", "released": False, "overdue": False},
+        {"name": "old2018", "release_date": "2018-01-01", "released": False, "overdue": True},
+        {"name": "done", "release_date": "2026-08-01", "released": True}]))
+    monkeypatch.setattr(server.forecast, "days_until",
+                        lambda d, **k: {"2026-09-04": 56, "2018-01-01": -3000}.get(d))
+    monkeypatch.setattr(server.github, "open_prs", lambda repo: okt([
+        {"number": 5, "url": "pr5", "isDraft": False, "title": "EX-1 fix", "headRefName": "x"}]))
+    monkeypatch.setattr(server.jira, "search", lambda jql, cloud=True, limit=200: okt([
+        {"key": "EX-1", "status": "In Review", "summary": "s"}]))
+    r = server.api_emf_coming(cfg, {})
+    assert r["ok"] and [rel["name"] for rel in r["releases"]] == ["ES6.3.9"]   # future/graced only
+    rel = r["releases"][0]
+    assert rel["items_ok"] and rel["items"][0]["url"].endswith("/EX-1")
+    assert rel["items"][0]["prs"] == [{"number": 5, "url": "pr5", "draft": False}]
+
+
+def test_api_emf_coming_tracked_and_item_error(monkeypatch, cfg):
+    cfg.emf = {**cfg.emf, "track_versions": ["ES6.3.9"]}
+    monkeypatch.setattr(server.jira, "versions", lambda p: okt([
+        {"name": "ES6.3.9", "release_date": "2026-09-04", "released": False},
+        {"name": "ES7.0.0", "release_date": None, "released": False}]))
+    monkeypatch.setattr(server.github, "open_prs", lambda repo: ToolResult(ok=False, data=None, error="no gh"))
+    monkeypatch.setattr(server.jira, "search",
+                        lambda jql, cloud=True, limit=200: ToolResult(ok=False, data=None, error="jira down"))
+    r = server.api_emf_coming(cfg, {})
+    assert [rel["name"] for rel in r["releases"]] == ["ES6.3.9"]              # only tracked
+    assert r["releases"][0]["items_ok"] is False and "jira down" in r["releases"][0]["items_error"]
+
+
+def test_api_emf_coming_versions_error(monkeypatch, cfg):
+    monkeypatch.setattr(server.jira, "versions",
+                        lambda p: ToolResult(ok=False, data=None, error="no creds", kind="error"))
+    r = server.api_emf_coming(cfg, {})
+    assert not r["ok"] and "no creds" in r["error"]
 
 
 # ---------------- live HTTP integration (Handler / routing / cache / static) ----------------

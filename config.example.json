@@ -27,6 +27,29 @@
     "hour": 9,
     "days": 14
   },
+  "emf": {
+    "_comment": "EMF (EXAScaler Management Framework) reports — needs `gh` on PATH (GitHub) + the cloud Atlassian token (Jira). track_versions empty = auto (unreleased EX fixVersions dated within coming_grace_days). risk_bands: first band whose max_days >= days-to-release wins; overdue => max_days 0.",
+    "enabled": true,
+    "repo": "whamcloud/exascaler-management-framework",
+    "release_branch": "6.3.8",
+    "nightly_workflow": "nightly-build-6_3_x.yml",
+    "stability_days": 30,
+    "jira_project": "EX",
+    "track_versions": [],
+    "coming_grace_days": 30,
+    "risk_bands": [
+      {"max_days": 0, "todo": 0.02, "progress": 0.30, "review": 0.75},
+      {"max_days": 4, "todo": 0.05, "progress": 0.45, "review": 0.85},
+      {"max_days": 10, "todo": 0.10, "progress": 0.60, "review": 0.90},
+      {"max_days": 30, "todo": 0.35, "progress": 0.75, "review": 0.92},
+      {"max_days": 9999, "todo": 0.60, "progress": 0.85, "review": 0.95}
+    ],
+    "status_tiers": {
+      "review": ["In Review", "Awaiting Verification", "Test"],
+      "progress": ["In Progress"],
+      "todo": ["To Do", "Open", "Reopened", "Need Information", "Blocked External"]
+    }
+  },
   "gerrit_web_base": "https://review.whamcloud.com",
   "jira_lu_base": "https://jira.whamcloud.com/browse",
   "jira_cloud_base": "https://ime-ddn.atlassian.net/browse",

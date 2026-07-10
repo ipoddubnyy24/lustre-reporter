@@ -121,7 +121,11 @@ svg.i.sm { width: 18px; height: 18px; }
 .brand .chip-branches { display: flex; gap: 6px; }
 .app-bar .spacer { flex: 1; }
 .app-bar .updated { color: var(--md-on-surface-variant); font-size: 12px; white-space: nowrap; }
-.app-bar .bar-actions { display: flex; align-items: center; gap: 8px; }
+.app-bar .bar-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+/* the app-bar is dense with the product switch added — drop the least-important
+   bits before anything overlaps on narrower windows. */
+@media (max-width: 1100px) { .app-bar .updated { display: none; } }
+@media (max-width: 900px) { .brand .title { display: none; } }
 
 /* ---------- tabs ---------- */
 .tabs { display: flex; gap: 0; background: var(--md-surface-container); padding: 0 16px;
@@ -301,3 +305,28 @@ svg.trend text { fill: var(--md-on-surface-variant); font-size: 10px; font-famil
   border-top-color: var(--md-primary); border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .empty { color: var(--md-on-surface-variant); padding: 12px 0; }
+
+/* ---------- product switch (Lustre / EMF) ---------- */
+.product-switch { display: inline-flex; background: var(--md-surface-container-high);
+  border: 1px solid var(--md-outline-variant); border-radius: 999px; padding: 3px; gap: 2px; margin-left: 4px; }
+.product-switch .seg { border: none; background: transparent; cursor: pointer; font: inherit;
+  font-size: 13px; font-weight: 600; color: var(--md-on-surface-variant); padding: 6px 16px; border-radius: 999px; }
+.product-switch .seg:hover { color: var(--md-on-surface); }
+.product-switch .seg.active { background: var(--md-primary); color: var(--md-on-primary); }
+.product.hidden { display: none; }
+
+/* ---------- forecast (EMF "coming") ---------- */
+.meter { height: 12px; border-radius: 999px; background: var(--md-surface-container-highest); overflow: hidden; margin: 8px 0 2px; }
+.meter > i { display: block; height: 100%; background: var(--md-primary); border-radius: 999px; transition: width .3s ease; }
+.prob-bar { display: inline-flex; align-items: center; gap: 8px; min-width: 112px; }
+.prob-bar .track { flex: 1; height: 6px; border-radius: 999px; background: var(--md-surface-container-highest); overflow: hidden; }
+.prob-bar .track > i { display: block; height: 100%; }
+.prob-bar .pct { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--md-on-surface-variant); min-width: 34px; text-align: right; }
+.tier-review > i, .prob-bar .track.tier-review > i { background: var(--md-success); }
+.tier-progress > i, .prob-bar .track.tier-progress > i { background: var(--md-warning); }
+.tier-todo > i, .prob-bar .track.tier-todo > i { background: var(--md-error); }
+.prob-bar .track.tier-other > i { background: var(--md-outline); }
+.chip.tier-review { background: var(--md-success-container); color: var(--md-on-success-container); }
+.chip.tier-progress { background: var(--md-warning-container); color: var(--md-on-warning-container); }
+.chip.tier-todo { background: var(--md-error-container); color: var(--md-on-error-container); }
+.chip.tier-other { background: var(--md-surface-container-highest); color: var(--md-on-surface-variant); }

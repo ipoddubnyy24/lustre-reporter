@@ -32,7 +32,7 @@ const fmtDate = (s, withTime) => {
   return withTime ? str.slice(0, 16).replace("T", " ") : str.slice(0, 10);
 };
 const spinnerBox = (txt) => el("div", { class: "loading" }, el("span", { class: "spinner" }), txt || "Loading…");
-const stripTicket = (s) => (s || "").replace(/^((?:LU|EX|DDN|EHT|GCP|IME)-\d+\s+)+/i, "");
+const stripTicket = (s) => (s || "").replace(/^((?:LU|EX|DDN|EHT|GCP|IME|RM)-\d+[\s:-]+)+/i, "");
 
 // ---------- progress plumbing ----------
 let inflight = 0;
@@ -62,15 +62,20 @@ async function api(path, params, refresh) {
 // ---------- state ----------
 let CFG = null;
 const S = {
+  product: "lustre",       // "lustre" | "emf" — top-level switch
   tab: "stability",
   selected: [],            // branch keys shown across all reports (top-bar chips)
   stability: { days: 30, custom: false, from: "", to: "" },
   landed: { days: 7, mode: "days", tag: "" },
   backports: { days: 120, onlyGaps: true },
+  emf: { stabilityDays: 30, tag: "" },
 };
 // stability/topfail are keyed by branch (one section per selected branch)
 const DATA = { stability: {}, topfail: {}, landed: null, backports: null };
 const LOADING = { landed: false, backports: false };
+const EMFDATA = { stability: null, landed: null, coming: null };
+const EMFLOADING = { stability: false, landed: false, coming: false };
+let emfLoaded = false;
 let autoTimer = null;
 
 const selectedBranches = () => CFG.branches.filter((b) => S.selected.includes(b.key));
@@ -251,10 +256,16 @@ function sessionsCard(sessions) {
   return card;
 }
 
-function drawTrend(trend) {
+function drawTrend(trend, opts) {
+  opts = opts || {};
+  const barKey = opts.barKey || "sessions";
+  const rateKey = opts.rateKey || "session_pass_rate";
+  const tip = opts.tip || ((d) => d.date + ": " + d.session_pass_rate + "% clean · " +
+    d.sessions + " sessions · " + d.testsets_failed + " test-sets failed");
   const W = 900, H = 260, padL = 38, padR = 14, padT = 14, padB = 30;
   const iw = W - padL - padR, ih = H - padT - padB, n = trend.length;
-  const maxS = Math.max(1, ...trend.map((d) => d.sessions));
+  const maxS = Math.max(1, ...trend.map((d) => d[barKey] || 0));
+  const rate = (d) => (d[rateKey] == null ? 0 : d[rateKey]);
   const x = (i) => padL + (n === 1 ? iw / 2 : (i / (n - 1)) * iw);
   const y = (r) => padT + ih - (Math.max(0, Math.min(100, r)) / 100) * ih;
   const S2 = "http://www.w3.org/2000/svg";
@@ -265,14 +276,14 @@ function drawTrend(trend) {
     g.append(mk("text", { x: padL - 6, y: y(v) + 3, "text-anchor": "end" }, document.createTextNode(v + "%")));
   });
   const bw = Math.max(1, iw / Math.max(n, 1) * 0.5);
-  trend.forEach((d, i) => { const bh = (d.sessions / maxS) * ih * 0.5; g.append(mk("rect", { class: "bar", x: x(i) - bw / 2, y: padT + ih - bh, width: bw, height: bh, rx: 1.5 })); });
-  const pts = trend.map((d, i) => [x(i), y(d.session_pass_rate == null ? 0 : d.session_pass_rate)]);
+  trend.forEach((d, i) => { const bh = ((d[barKey] || 0) / maxS) * ih * 0.5; g.append(mk("rect", { class: "bar", x: x(i) - bw / 2, y: padT + ih - bh, width: bw, height: bh, rx: 1.5 })); });
+  const pts = trend.map((d, i) => [x(i), y(rate(d))]);
   const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   g.append(mk("path", { class: "area", d: line + " L" + pts[n - 1][0].toFixed(1) + " " + (padT + ih) + " L" + pts[0][0].toFixed(1) + " " + (padT + ih) + " Z" }));
   g.append(mk("path", { class: "line", d: line }));
   trend.forEach((d, i) => {
-    const dot = mk("circle", { class: "dot", cx: x(i), cy: y(d.session_pass_rate), r: 3.5 });
-    dot.append(mk("title", {}, document.createTextNode(d.date + ": " + d.session_pass_rate + "% clean · " + d.sessions + " sessions · " + d.testsets_failed + " test-sets failed")));
+    const dot = mk("circle", { class: "dot", cx: x(i), cy: y(rate(d)), r: 3.5 });
+    dot.append(mk("title", {}, document.createTextNode(tip(d))));
     g.append(dot);
   });
   const idxs = n <= 1 ? [0] : [...new Set([0, Math.floor((n - 1) / 2), n - 1])];
@@ -513,6 +524,177 @@ async function openPing(branchMeta, row) {
   $("#dialog-root").replaceChildren(scrim);
 }
 
+// =====================================================================
+//  EMF — build stability (GitHub Actions), landed (CalVer), coming (forecast)
+// =====================================================================
+async function loadEmfStability(refresh) {
+  EMFLOADING.stability = true; renderEmfStability();
+  try { EMFDATA.stability = await api("/api/emf/stability", { days: S.emf.stabilityDays }, refresh); }
+  catch (e) { EMFDATA.stability = { ok: false, kind: "error", error: String(e) }; }
+  EMFLOADING.stability = false; renderEmfStability();
+}
+async function loadEmfLanded(refresh) {
+  EMFLOADING.landed = true; renderEmfLanded();
+  try { EMFDATA.landed = await api("/api/emf/landed", { tag: S.emf.tag || undefined }, refresh); }
+  catch (e) { EMFDATA.landed = { ok: false, error: String(e) }; }
+  EMFLOADING.landed = false; renderEmfLanded();
+}
+async function loadEmfComing(refresh) {
+  EMFLOADING.coming = true; renderEmfComing();
+  try { EMFDATA.coming = await api("/api/emf/coming", {}, refresh); }
+  catch (e) { EMFDATA.coming = { ok: false, error: String(e) }; }
+  EMFLOADING.coming = false; renderEmfComing();
+}
+
+function renderEmfStability() {
+  const root = $("#tab-emf-stability");
+  if (!root) return;
+  const presets = [7, 14, 30, 60, 90];
+  const controls = el("div", { class: "controls" },
+    el("div", { class: "field" }, el("label", {}, "Period"),
+      el("select", { onchange: (e) => { S.emf.stabilityDays = +e.target.value; loadEmfStability(false); } },
+        ...presets.map((d) => el("option", { value: d, selected: S.emf.stabilityDays === d ? "" : null }, "Last " + d + " days")))),
+    el("span", { class: "muted small", style: "align-self:flex-end" },
+      "CI pass-rate of the EMF nightly workflow" + (CFG.emf && CFG.emf.workflow ? " (" + CFG.emf.workflow + ")" : "") + "."));
+  const out = [controls];
+  const d = EMFDATA.stability;
+  if (EMFLOADING.stability || !d) { out.push(el("div", { class: "card" }, spinnerBox("Querying GitHub Actions…"))); root.replaceChildren(...out); return; }
+  if (!d.ok) { out.push(sourceBanner(d, "GitHub")); root.replaceChildren(...out); return; }
+  const sum = d.summary, rc = (r) => r == null ? "" : (r >= 90 ? "good" : r >= 70 ? "warn" : "bad");
+  out.push(el("div", { class: "card" },
+    el("h2", {}, "Build stability — " + (d.repo || "EMF")),
+    el("div", { class: "card-sub" }, "Workflow " + (d.workflow || "?") + " · last " + d.days + " days"),
+    el("div", { class: "tiles" },
+      tile(rc(sum.pass_rate), sum.pass_rate == null ? "—" : sum.pass_rate + "%", "pass rate"),
+      tile("", sum.runs, "runs"),
+      tile(sum.passed ? "good" : "", sum.passed, "passed"),
+      tile(sum.failed ? "bad" : "good", sum.failed, "failed"),
+      tile("", sum.other, "cancelled / skipped"))));
+  out.push(el("div", { class: "card" }, el("h2", {}, "Stability trend"),
+    d.trend.length ? drawTrend(d.trend, {
+      barKey: "runs", rateKey: "pass_rate",
+      tip: (x) => x.date + ": " + (x.pass_rate == null ? "n/a" : x.pass_rate + "% pass") + " · " + x.runs + " runs · " + x.failed + " failed",
+    }) : el("div", { class: "empty" }, "No runs in this period."),
+    el("div", { class: "legend" },
+      el("span", {}, el("i", { class: "dot-key", style: "background:var(--md-primary)" }), "pass %"),
+      el("span", {}, el("i", { class: "dot-key", style: "background:var(--md-on-surface-variant);opacity:.4" }), "runs/day"))));
+  const runs = d.runs || [];
+  const rcard = el("div", { class: "card" }, el("h2", {}, "Recent runs (" + runs.length + ")"));
+  if (!runs.length) { rcard.append(el("div", { class: "empty" }, "No runs.")); }
+  else {
+    const chip = (c) => el("span", { class: "chip " + (c === "success" ? "good" : c === "failure" ? "bad" : "neutral") }, c || "?");
+    const rows = runs.map((r) => el("tr", {},
+      el("td", {}, chip(r.conclusion)), el("td", { class: "nowrap" }, fmtDate(r.date, true)),
+      el("td", { class: "mono small" }, r.branch || "—"), el("td", { class: "small muted" }, r.event || ""),
+      el("td", {}, r.url ? el("a", { href: r.url, target: "_blank" }, "open") : "—")));
+    rcard.append(el("div", { class: "scroll-x" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Result"), el("th", {}, "When"), el("th", {}, "Branch"), el("th", {}, "Event"), el("th", {}, "Link"))),
+      el("tbody", {}, ...rows))));
+  }
+  out.push(rcard);
+  root.replaceChildren(...out);
+}
+
+function renderEmfLanded() {
+  const root = $("#tab-emf-landed");
+  if (!root) return;
+  const input = el("input", {
+    type: "text", value: S.emf.tag || "", placeholder: "latest CalVer",
+    title: "Blank = since the newest CalVer release; or type a release tag, e.g. 6.3.8-2026061600",
+    onkeydown: (e) => { if (e.key === "Enter") { S.emf.tag = e.target.value.trim(); loadEmfLanded(false); } },
+  });
+  const controls = el("div", { class: "controls" },
+    el("div", { class: "field" }, el("label", {}, "Since release"), input),
+    el("button", { class: "btn filled sm", style: "align-self:flex-end", onclick: () => { S.emf.tag = input.value.trim(); loadEmfLanded(false); } }, "Apply"),
+    el("span", { class: "muted small", style: "align-self:flex-end" }, "Merged onto the release branch since the newest CalVer release."));
+  const out = [controls];
+  const d = EMFDATA.landed;
+  if (EMFLOADING.landed || !d) { out.push(el("div", { class: "card" }, spinnerBox("Querying GitHub…"))); root.replaceChildren(...out); return; }
+  if (!d.ok) { out.push(sourceBanner(d, "GitHub")); root.replaceChildren(...out); return; }
+  setBadge("emf-landed", d.count || 0);
+  const head = el("h2", {}, el("span", { class: "mono" }, d.branch || "release"));
+  if (d.tag) head.append(" ", el("span", { class: "chip tertiary", title: (d.manual ? "chosen" : "latest") + " release" + (d.tag_date ? " · " + d.tag_date : "") }, d.tag));
+  head.append("  ", el("span", { class: "muted small" }, (d.count || 0) + " since release" + (d.ahead != null ? " · " + d.ahead + " commits ahead" : "")));
+  const card = el("div", { class: "card" }, head);
+  if (!d.count) { card.append(el("div", { class: "empty" }, "Nothing merged since " + (d.tag || "the last release") + ".")); out.push(card); root.replaceChildren(...out); return; }
+  if (d.areas && d.areas.length) card.append(el("div", { class: "muted small", style: "margin:2px 0 12px" }, "Areas: " + d.areas.map((a) => a[0] + " ×" + a[1]).join(" · ")));
+  const rows = d.patches.map((p) => el("tr", {},
+    el("td", {}, p.url ? el("a", { href: p.url, target: "_blank", class: "mono" }, p.number ? "#" + p.number : "commit") : "—"),
+    el("td", {}, ticketLinks(p.tickets)), el("td", { class: "subject" }, stripTicket(p.subject)),
+    el("td", { class: "owner nowrap" }, p.owner || "—"), el("td", { class: "nowrap" }, fmtDate(p.date))));
+  card.append(el("div", { class: "scroll-x" }, el("table", {},
+    el("thead", {}, el("tr", {}, el("th", {}, "PR"), el("th", {}, "Ticket"), el("th", {}, "Subject"), el("th", {}, "Author"), el("th", {}, "Merged"))),
+    el("tbody", {}, ...rows))));
+  out.push(card);
+  root.replaceChildren(...out);
+}
+
+function probBar(p, tier) {
+  const pct = p == null ? null : Math.round(p * 100);
+  return el("span", { class: "prob-bar" },
+    el("span", { class: "track tier-" + (tier || "other") }, el("i", { style: "width:" + (pct == null ? 0 : pct) + "%" })),
+    el("span", { class: "pct" }, pct == null ? "—" : pct + "%"));
+}
+function prLinks(prs) {
+  if (!prs || !prs.length) return el("span", { class: "muted" }, "—");
+  const wrap = el("span");
+  prs.forEach((p, i) => {
+    if (i) wrap.append(" ");
+    wrap.append(el("a", { href: p.url, target: "_blank", class: "mono", title: p.draft ? "draft PR" : "open PR" }, "#" + p.number + (p.draft ? "*" : "")));
+  });
+  return wrap;
+}
+function renderEmfComing() {
+  const root = $("#tab-emf-coming");
+  if (!root) return;
+  const out = [el("div", { class: "controls" },
+    el("span", { class: "muted small" }, "Forecast of what lands in each upcoming release — open Jira items weighted by status and days-to-release. Green = likely, red = unlikely.")) ];
+  const d = EMFDATA.coming;
+  if (EMFLOADING.coming || !d) { out.push(el("div", { class: "card" }, spinnerBox("Fetching Jira items & release dates…"))); root.replaceChildren(...out); return; }
+  if (!d.ok) { out.push(sourceBanner(d, "Jira")); root.replaceChildren(...out); return; }
+  if (!d.releases.length) { out.push(el("div", { class: "card" }, el("div", { class: "empty" }, "No upcoming releases with a date in the " + (d.project || "EX") + " project."))); root.replaceChildren(...out); return; }
+  setBadge("emf-coming", d.releases.reduce((a, r) => a + Math.round(r.expected || 0), 0));
+  d.releases.forEach((r) => out.push(comingCard(r)));
+  root.replaceChildren(...out);
+}
+function comingCard(r) {
+  const daysChip = () => {
+    if (r.days == null) return el("span", { class: "chip neutral" }, "no date");
+    if (r.days < 0) return el("span", { class: "chip bad" }, Math.abs(r.days) + "d overdue");
+    if (r.days <= 10) return el("span", { class: "chip warn" }, "in " + r.days + "d");
+    return el("span", { class: "chip neutral" }, "in " + r.days + "d");
+  };
+  const pct = r.total ? Math.round((r.expected / r.total) * 100) : 0;
+  const card = el("div", { class: "card" },
+    el("h2", { style: "display:flex;align-items:center;gap:10px;flex-wrap:wrap" },
+      r.name, el("span", { class: "chip tertiary" }, fmtDate(r.release_date)), daysChip()));
+  if (!r.items_ok) { card.append(sourceBanner({ kind: "error", error: r.items_error }, "Jira")); return card; }
+  card.append(el("div", { class: "card-sub", style: "margin-top:8px" },
+    "Expected to land: ", el("strong", {}, "~" + r.expected + " of " + r.total + " open"), " (" + pct + "%)"));
+  card.append(el("div", { class: "meter", title: "~" + r.expected + " of " + r.total + " expected to land" }, el("i", { style: "width:" + pct + "%" })));
+  const t = r.tiers || {}, tc = (k) => (t[k] && t[k].count) || 0, te = (k) => (t[k] && t[k].expected) || 0;
+  const tiles = el("div", { class: "tiles", style: "margin-top:14px" },
+    tile("good", tc("review"), "in review (~" + te("review") + " land)"),
+    tile("warn", tc("progress"), "in progress (~" + te("progress") + " land)"),
+    tile("bad", tc("todo"), "to do (~" + te("todo") + " land)"));
+  if (tc("other")) tiles.append(tile("", tc("other"), "other status"));
+  card.append(tiles);
+  const items = r.items || [];
+  if (items.length) {
+    const rows = items.map((it) => el("tr", {},
+      el("td", {}, probBar(it.probability, it.tier)),
+      el("td", {}, el("span", { class: "chip tier-" + it.tier }, it.status || "?")),
+      el("td", {}, el("a", { href: it.url, target: "_blank", class: "ticket-link" }, it.key)),
+      el("td", { class: "subject" }, it.summary || ""),
+      el("td", { class: "owner nowrap" }, it.assignee || "—"),
+      el("td", {}, prLinks(it.prs))));
+    card.append(el("div", { class: "scroll-x", style: "margin-top:10px" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Chance"), el("th", {}, "Status"), el("th", {}, "Ticket"), el("th", {}, "Summary"), el("th", {}, "Assignee"), el("th", {}, "PRs"))),
+      el("tbody", {}, ...rows))));
+  }
+  return card;
+}
+
 // ---------- badges / tabs / boot ----------
 function setBadge(name, n) {
   const b = $("#badge-" + name);
@@ -544,17 +726,35 @@ function toggleBranch(key) {
 }
 function switchTab(name) {
   S.tab = name;
-  $$("#tabs .tab-btn").forEach((x) => x.classList.toggle("active", x.dataset.tab === name));
-  $$(".tab").forEach((s) => s.classList.toggle("active", s.id === "tab-" + name));
+  const isEmf = name.startsWith("emf-");
+  const nav = isEmf ? "#emf-tabs" : "#tabs";
+  const panel = isEmf ? "#product-emf" : "#product-lustre";
+  $$(nav + " .tab-btn").forEach((x) => x.classList.toggle("active", x.dataset.tab === name));
+  $$(panel + " .tab").forEach((s) => s.classList.toggle("active", s.id === "tab-" + name));
+}
+function switchProduct(product) {
+  S.product = product;
+  $$("#product-switch .seg").forEach((s) => s.classList.toggle("active", s.dataset.product === product));
+  $("#product-lustre").classList.toggle("hidden", product !== "lustre");
+  $("#product-emf").classList.toggle("hidden", product !== "emf");
+  $("#branch-chips").style.display = product === "lustre" ? "" : "none";
+  if (product === "emf" && !emfLoaded) { emfLoaded = true; loadAllEmf(false); }
 }
 async function loadAll(refresh) {
   await Promise.allSettled([loadStability(refresh), loadLanded(refresh), loadBackports(refresh)]);
   markUpdated();
   if (refresh) snack("Data refreshed");
 }
+async function loadAllEmf(refresh) {
+  emfLoaded = true;
+  await Promise.allSettled([loadEmfStability(refresh), loadEmfLanded(refresh), loadEmfComing(refresh)]);
+  markUpdated();
+  if (refresh) snack("EMF data refreshed");
+}
+const refreshCurrent = () => (S.product === "emf" ? loadAllEmf(true) : loadAll(true));
 function setAuto(sec) {
   if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
-  if (sec > 0) autoTimer = setInterval(() => loadAll(true), sec * 1000);
+  if (sec > 0) autoTimer = setInterval(refreshCurrent, sec * 1000);
 }
 async function boot() {
   $("#refresh").append(icon("refresh"));
@@ -568,13 +768,20 @@ async function boot() {
   S.selected = (Array.isArray(saved) && saved.length && saved.every((k) => allKeys.includes(k)))
     ? allKeys.filter((k) => saved.includes(k)) : allKeys.slice();
   renderBranchChips();
-  $$("#tabs .tab-btn").forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
-  $("#refresh").addEventListener("click", () => loadAll(true));
-  $("#fab").addEventListener("click", () => loadAll(true));
+  $$(".tabs .tab-btn").forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+  if (CFG.emf_enabled) {
+    $$("#product-switch .seg").forEach((b) => b.addEventListener("click", () => switchProduct(b.dataset.product)));
+  } else {
+    $("#product-switch").style.display = "none";   // EMF off -> Lustre-only, hide switch
+  }
+  $("#refresh").addEventListener("click", refreshCurrent);
+  $("#fab").addEventListener("click", refreshCurrent);
   $("#auto").addEventListener("change", (e) => setAuto(+e.target.value));
 
-  // eager initial spinners so nothing is blank, then load everything at once
+  // eager initial spinners so nothing is blank, then load Lustre now; EMF is
+  // lazy-loaded on first switch (its GitHub+Jira queries are slower).
   renderStability(); renderLanded(); renderBackports();
+  renderEmfStability(); renderEmfLanded(); renderEmfComing();
   await loadAll(false);
 }
 boot();

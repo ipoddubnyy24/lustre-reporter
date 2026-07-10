@@ -19,6 +19,10 @@
     <div class="brand">
       <img class="logo" src="/static/icon.svg" alt="EXA Reporter">
       <span class="title">EXA Reporter</span>
+      <div class="product-switch" id="product-switch" role="tablist" aria-label="Product">
+        <button class="seg active" data-product="lustre">Lustre</button>
+        <button class="seg" data-product="emf">EMF</button>
+      </div>
       <span class="chip-branches" id="branch-chips"></span>
     </div>
     <span class="spacer"></span>
@@ -39,17 +43,31 @@
   </div>
   <div class="linear hidden" id="progress"><i></i></div>
 
-  <nav class="tabs" id="tabs">
-    <button class="tab-btn active" data-tab="stability">Build stability</button>
-    <button class="tab-btn" data-tab="landed">Landed <span class="badge" id="badge-landed" hidden></span></button>
-    <button class="tab-btn" data-tab="backports">Backports <span class="badge" id="badge-backports" hidden></span></button>
-  </nav>
+  <div class="product" id="product-lustre">
+    <nav class="tabs" id="tabs">
+      <button class="tab-btn active" data-tab="stability">Build stability</button>
+      <button class="tab-btn" data-tab="landed">Landed <span class="badge" id="badge-landed" hidden></span></button>
+      <button class="tab-btn" data-tab="backports">Backports <span class="badge" id="badge-backports" hidden></span></button>
+    </nav>
+    <main>
+      <section class="tab active" id="tab-stability"></section>
+      <section class="tab" id="tab-landed"></section>
+      <section class="tab" id="tab-backports"></section>
+    </main>
+  </div>
 
-  <main>
-    <section class="tab active" id="tab-stability"></section>
-    <section class="tab" id="tab-landed"></section>
-    <section class="tab" id="tab-backports"></section>
-  </main>
+  <div class="product hidden" id="product-emf">
+    <nav class="tabs" id="emf-tabs">
+      <button class="tab-btn active" data-tab="emf-stability">Build stability</button>
+      <button class="tab-btn" data-tab="emf-landed">Landed <span class="badge" id="badge-emf-landed" hidden></span></button>
+      <button class="tab-btn" data-tab="emf-coming">Coming <span class="badge" id="badge-emf-coming" hidden></span></button>
+    </nav>
+    <main>
+      <section class="tab active" id="tab-emf-stability"></section>
+      <section class="tab" id="tab-emf-landed"></section>
+      <section class="tab" id="tab-emf-coming"></section>
+    </main>
+  </div>
 
   <button class="fab" id="fab" title="Refresh all data">
     <span class="fab-icon"></span><span>Refresh</span>

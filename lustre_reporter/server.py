@@ -18,10 +18,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import daily_report, publish
-from .analysis import backport, stability
+from . import daily_report, publish, util
+from .analysis import backport, emf_stability, forecast, stability
 from .config import Config
-from .sources import gerrit, git_tags, jira, maloo, teams
+from .sources import gerrit, git_tags, github, jira, maloo, teams
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 _MIME = {
@@ -82,6 +82,13 @@ def api_config(cfg: Config, qs: dict) -> dict:
                     for m in cfg.masters],
         "gerrit_web_base": cfg.gerrit_web_base,
         "confluence_enabled": bool((cfg.confluence or {}).get("enabled")),
+        "emf_enabled": bool((cfg.emf or {}).get("enabled")),
+        "emf": {
+            "repo": (cfg.emf or {}).get("repo"),
+            "release_branch": (cfg.emf or {}).get("release_branch"),
+            "jira_project": (cfg.emf or {}).get("jira_project"),
+            "workflow": (cfg.emf or {}).get("nightly_workflow"),
+        },
         "today": date.today().isoformat(),
         "defaults": {"landed_days": 7, "stability_days": 30,
                      "backport_days": cfg.backport_scan_days},
@@ -243,6 +250,76 @@ def api_slack_report(cfg: Config, qs: dict) -> dict:
     return daily_report.send_daily(cfg)
 
 
+# ------------------------------- EMF endpoints -------------------------------
+
+
+def api_emf_stability(cfg: Config, qs: dict) -> dict:
+    """EMF build stability: pass/fail trend of the configured CI workflow."""
+    emf = cfg.emf or {}
+    days = max(1, min(_int(qs, "days", emf.get("stability_days", 30)), 365))
+    limit = max(1, min(_int(qs, "limit", 100), 200))
+    res = github.workflow_runs(emf.get("repo"), emf.get("nightly_workflow"), limit=limit)
+    base = {"days": days, "repo": emf.get("repo"), "workflow": emf.get("nightly_workflow")}
+    if not res.ok:
+        return {**base, "ok": False, "kind": res.kind, "error": res.error}
+    cutoff = util.days_ago_iso(days)
+    runs = [r for r in res.data if str(r.get("created_at") or "")[:10] >= cutoff]
+    return {**base, "ok": True, **emf_stability.report(runs, days=days)}
+
+
+def api_emf_landed(cfg: Config, qs: dict) -> dict:
+    """EMF landed since the newest CalVer release (or an explicit ?tag=)."""
+    emf = cfg.emf or {}
+    tag = (qs.get("tag", [""])[0] or "").strip() or None
+    branch = qs.get("branch", [emf.get("release_branch")])[0]
+    result = github.landed(emf.get("repo"), branch, tag=tag)
+    for p in result.get("patches", []):
+        _attach_ticket_urls(cfg, p.get("tickets", []))
+    return result
+
+
+def api_emf_coming(cfg: Config, qs: dict) -> dict:
+    """Forecast what lands in each upcoming release (EX Jira items × risk bands)."""
+    emf = cfg.emf or {}
+    proj = emf.get("jira_project", "EX")
+    vres = jira.versions(proj)
+    if not vres.ok:
+        return {"ok": False, "kind": vres.kind, "error": vres.error, "project": proj}
+    unreleased = [v for v in vres.data if not v.get("released")]
+    tracked = emf.get("track_versions") or []
+    if tracked:
+        chosen = [v for v in unreleased if v.get("name") in tracked]
+    else:  # auto: unreleased versions dated within the grace window (drops ancient ones)
+        grace = emf.get("coming_grace_days", 30)
+        chosen = [v for v in unreleased if v.get("release_date")
+                  and (forecast.days_until(v["release_date"]) or -99999) >= -grace]
+    chosen.sort(key=lambda v: v.get("release_date") or "9999-99-99")
+
+    pr_map: dict = {}
+    prs = github.open_prs(emf.get("repo"))
+    if prs.ok:
+        for p in prs.data:
+            text = f"{p.get('title') or ''} {p.get('headRefName') or ''}"
+            for t in util.parse_tickets(text):
+                pr_map.setdefault(t["key"], []).append(
+                    {"number": p.get("number"), "url": p.get("url"), "draft": p.get("isDraft")})
+
+    bands, tiers = emf.get("risk_bands") or [], emf.get("status_tiers") or {}
+    releases = []
+    for v in chosen:
+        jql = 'project = %s AND fixVersion = "%s" AND statusCategory != Done' % (proj, v["name"])
+        ires = jira.search(jql, cloud=True, limit=200)
+        items = ires.data if ires.ok else []
+        for it in items:
+            it["url"] = f"{cfg.jira_cloud_base}/{it['key']}"
+            it["prs"] = pr_map.get(it["key"], [])
+        fc = forecast.forecast(items, v.get("release_date"), bands=bands, tiers=tiers)
+        releases.append({"name": v.get("name"), "overdue": v.get("overdue"),
+                         "items_ok": ires.ok,
+                         "items_error": None if ires.ok else ires.error, **fc})
+    return {"ok": True, "project": proj, "repo": emf.get("repo"), "releases": releases}
+
+
 # Endpoints that are safe/beneficial to cache, with their TTLs (seconds).
 _CACHED = {
     "/api/stability": 300,
@@ -251,6 +328,9 @@ _CACHED = {
     "/api/backports": 600,
     "/api/ticket": 900,
     "/api/change": 600,
+    "/api/emf/stability": 900,
+    "/api/emf/landed": 300,
+    "/api/emf/coming": 600,
 }
 _ROUTES = {
     "/api/config": api_config,
@@ -263,6 +343,9 @@ _ROUTES = {
     "/api/ping": api_ping,
     "/api/publish": api_publish,
     "/api/slack-report": api_slack_report,
+    "/api/emf/stability": api_emf_stability,
+    "/api/emf/landed": api_emf_landed,
+    "/api/emf/coming": api_emf_coming,
 }
 
 

@@ -36,3 +36,13 @@ def test_days_ago_iso():
 def test_days_ago_iso_default_today():
     # exercises the `today or date.today()` default branch
     assert len(util.days_ago_iso(1)) == 10
+
+
+def test_subsystem():
+    assert util.subsystem("LU-1 kernel: fix") == "kernel"       # Lustre: space sep
+    assert util.subsystem("EX-14153: nodemap: x") == "nodemap"  # EMF: colon sep
+    assert util.subsystem("EX-13413-Support SFA") == "misc"     # EMF: hyphen, no subsystem colon
+    assert util.subsystem("pcc: no ticket") == "pcc"
+    assert util.subsystem("no colon here") == "misc"
+    assert util.subsystem("") == "misc"
+    assert util.subsystem(None) == "misc"

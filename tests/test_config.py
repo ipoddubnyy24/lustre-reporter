@@ -48,6 +48,7 @@ def test_load_config_overrides(monkeypatch, tmp_path):
         "git_fetch": {"use_origin": False, "remotes": ["gh://{branch}"]},
         "confluence": {"enabled": False},
         "slack": {"enabled": True, "webhook_url": "http://hook"},
+        "emf": {"enabled": False, "release_branch": "7.0.0"},
     }))
     monkeypatch.setenv("LUSTRE_REPORTER_CONFIG", str(p))
     c = load_config()
@@ -61,6 +62,8 @@ def test_load_config_overrides(monkeypatch, tmp_path):
     assert c.confluence["enabled"] is False and c.confluence["space_id"] == "1075183618"
     assert c.slack["enabled"] is True and c.slack["webhook_url"] == "http://hook"
     assert c.slack["hour"] == 9  # unspecified key keeps default
+    assert c.emf["enabled"] is False and c.emf["release_branch"] == "7.0.0"
+    assert c.emf["jira_project"] == "EX"  # unspecified key keeps default
 
 
 def test_load_config_invalid_json(monkeypatch, tmp_path):
