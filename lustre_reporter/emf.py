@@ -26,15 +26,24 @@ def release_line(name: str, lines: list[dict]) -> dict | None:
     return None
 
 
-def collect_stability(cfg, *, days: int | None = None, limit: int = 100) -> dict:
+def collect_stability(cfg, *, days: int | None = None, frm: str | None = None,
+                      to: str | None = None) -> dict:
     emf = cfg.emf or {}
     days = emf.get("stability_days", 30) if days is None else days
-    res = github.workflow_runs(emf.get("repo"), emf.get("nightly_workflow"), limit=limit)
-    base = {"days": days, "repo": emf.get("repo"), "workflow": emf.get("nightly_workflow")}
+    if frm:
+        since, until = frm, (to or None)
+    else:
+        since, until = util.days_ago_iso(days), None
+    res = github.workflow_runs(emf.get("repo"), emf.get("nightly_workflow"),
+                               since=since, until=until)
+    base = {"days": days, "from": frm, "to": to,
+            "repo": emf.get("repo"), "workflow": emf.get("nightly_workflow")}
     if not res.ok:
         return {**base, "ok": False, "kind": res.kind, "error": res.error}
-    cutoff = util.days_ago_iso(days)
-    runs = [r for r in res.data if str(r.get("created_at") or "")[:10] >= cutoff]
+    runs = res.data
+    if frm:  # defensively bound to the window (the server-side created filter also does)
+        hi = to or "9999-99-99"
+        runs = [r for r in runs if frm <= str(r.get("created_at") or "")[:10] <= hi]
     return {**base, "ok": True, **emf_stability.report(runs, days=days)}
 
 

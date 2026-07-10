@@ -188,19 +188,35 @@ def test_api_slack_report(monkeypatch, cfg):
 
 # ---------------- EMF endpoints (thin wrappers over emf.collect_*) ----------------
 def test_api_emf_stability_ok(monkeypatch, cfg):
-    monkeypatch.setattr(emf.github, "workflow_runs", lambda repo, wf, limit=100: okt([
-        {"conclusion": "success", "created_at": "2026-07-10T00:00:00Z"},
-        {"conclusion": "failure", "created_at": "2020-01-01T00:00:00Z"}]))   # old -> filtered by cutoff
-    monkeypatch.setattr(emf.util, "days_ago_iso", lambda d: "2026-01-01")
+    monkeypatch.setattr(emf.github, "workflow_runs",
+                        lambda repo, wf, **k: okt([{"conclusion": "success", "created_at": "2026-07-10T00:00:00Z"}]))
     r = server.api_emf_stability(cfg, {"days": ["30"]})
     assert r["ok"] and r["days"] == 30 and r["summary"]["runs"] == 1
 
 
 def test_api_emf_stability_error(monkeypatch, cfg):
     monkeypatch.setattr(emf.github, "workflow_runs",
-                        lambda repo, wf, limit=100: ToolResult(ok=False, data=None, error="gh 401", kind="auth"))
+                        lambda repo, wf, **k: ToolResult(ok=False, data=None, error="gh 401", kind="auth"))
     r = server.api_emf_stability(cfg, {})
     assert not r["ok"] and r["kind"] == "auth"
+
+
+def test_api_emf_stability_custom_range(monkeypatch, cfg):
+    seen = {}
+
+    def wf(repo, workflow, *, since=None, until=None, **k):
+        seen["since"], seen["until"] = since, until
+        return okt([{"conclusion": "success", "created_at": "2026-05-10T00:00:00Z"}])
+    monkeypatch.setattr(emf.github, "workflow_runs", wf)
+    r = server.api_emf_stability(cfg, {"from": ["2026-05-01"], "to": ["2026-06-01"]})
+    assert r["ok"] and r["from"] == "2026-05-01" and r["to"] == "2026-06-01"
+    assert seen == {"since": "2026-05-01", "until": "2026-06-01"} and r["days"] <= 365
+
+
+def test_api_emf_stability_bad_from(monkeypatch, cfg):
+    monkeypatch.setattr(emf.github, "workflow_runs", lambda repo, wf, **k: okt([]))
+    r = server.api_emf_stability(cfg, {"from": ["not-a-date"], "days": ["45"]})
+    assert r["ok"] and r["days"] == 45     # invalid 'from' -> falls back to days
 
 
 def test_api_emf_landed(monkeypatch, cfg):

@@ -255,11 +255,22 @@ def api_slack_report(cfg: Config, qs: dict) -> dict:
 
 
 def api_emf_stability(cfg: Config, qs: dict) -> dict:
-    """EMF build stability: pass/fail trend of the configured CI workflow."""
+    """EMF build stability: pass/fail trend of the configured CI workflow.
+
+    ``?days=N`` for a rolling window, or ``?from=YYYY-MM-DD&to=YYYY-MM-DD`` for a
+    custom range (both clamped to a year of runs)."""
     emf_cfg = cfg.emf or {}
-    days = max(1, min(_int(qs, "days", emf_cfg.get("stability_days", 30)), 365))
-    limit = max(1, min(_int(qs, "limit", 100), 200))
-    return emf.collect_stability(cfg, days=days, limit=limit)
+    frm = qs.get("from", [None])[0]
+    to = qs.get("to", [None])[0]
+    if frm:
+        try:
+            span = (date.today() - date.fromisoformat(frm)).days + 1
+        except ValueError:
+            span = _int(qs, "days", 30)
+        days = max(1, min(span, 365))
+    else:
+        days = max(1, min(_int(qs, "days", emf_cfg.get("stability_days", 30)), 365))
+    return emf.collect_stability(cfg, days=days, frm=frm, to=to)
 
 
 def api_emf_landed(cfg: Config, qs: dict) -> dict:

@@ -10,13 +10,39 @@ def _err(msg="boom", kind="error"):
     return ToolResult(ok=False, data=None, error=msg, kind=kind)
 
 
-def test_workflow_runs(monkeypatch):
-    seen = {}
+def test_workflow_runs_paginates(monkeypatch):
+    calls = []
+
+    def fake(tool, args, timeout=90):
+        calls.append(args)
+        page = int(next(a.split("=")[1] for a in args if a.startswith("page=")))
+        return _ok([{"conclusion": "success"}] * (100 if page == 1 else 1))  # full page then short
+    monkeypatch.setattr(github, "run_json", fake)
+    r = github.workflow_runs("o/r", "wf.yml", since="2026-01-01", per_page=100)
+    assert r.ok and len(r.data) == 101 and len(calls) == 2      # stopped after the short page
+    assert "created=>=2026-01-01" in calls[0]
+
+
+def test_workflow_runs_hits_max_pages(monkeypatch):
+    # every page full -> loop runs all max_pages and exits without an early break
+    monkeypatch.setattr(github, "run_json", lambda tool, args, timeout=90: _ok([{"conclusion": "success"}]))
+    r = github.workflow_runs("o/r", "wf.yml", per_page=1, max_pages=3)
+    assert r.ok and len(r.data) == 3
+
+
+def test_workflow_runs_error(monkeypatch):
     monkeypatch.setattr(github, "run_json",
-                        lambda tool, args, timeout=90: (seen.update(t=tool, a=args), _ok([{"conclusion": "success"}]))[1])
-    r = github.workflow_runs("o/r", "wf.yml", limit=5)
-    assert r.ok and seen["t"] == "gh"
-    assert "repos/o/r/actions/workflows/wf.yml/runs?per_page=5" in seen["a"][1]
+                        lambda tool, args, timeout=90: ToolResult(ok=False, data=None, error="e", kind="auth"))
+    assert not github.workflow_runs("o/r", "wf.yml").ok
+
+
+def test_workflow_runs_date_windows(monkeypatch):
+    calls = []
+    monkeypatch.setattr(github, "run_json", lambda tool, args, timeout=90: (calls.append(args), _ok([]))[1])
+    github.workflow_runs("o/r", "wf.yml", until="2026-02-01")
+    github.workflow_runs("o/r", "wf.yml", since="2026-01-01", until="2026-02-01")
+    assert "created=<=2026-02-01" in calls[0]
+    assert "created=2026-01-01..2026-02-01" in calls[1]
 
 
 def test_releases(monkeypatch):

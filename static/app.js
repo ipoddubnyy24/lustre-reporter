@@ -33,6 +33,8 @@ const fmtDate = (s, withTime) => {
 };
 const spinnerBox = (txt) => el("div", { class: "loading" }, el("span", { class: "spinner" }), txt || "Loading…");
 const stripTicket = (s) => (s || "").replace(/^((?:LU|EX|DDN|EHT|GCP|IME|RM)-\d+[\s:-]+)+/i, "");
+const STAB_PRESETS = [7, 14, 30, 60, 90, 120, 180, 365];
+const periodLabel = (d) => (+d === 365 ? "Last 1 year" : "Last " + d + " days");
 
 // ---------- progress plumbing ----------
 let inflight = 0;
@@ -68,7 +70,7 @@ const S = {
   stability: { days: 30, custom: false, from: "", to: "" },
   landed: { days: 7, mode: "days", tag: "" },
   backports: { days: 120, onlyGaps: true },
-  emf: { stabilityDays: 30, tag: "" },
+  emf: { stabilityDays: 30, stabilityCustom: false, stabilityFrom: "", stabilityTo: "", tag: "" },
 };
 // stability/topfail are keyed by branch (one section per selected branch)
 const DATA = { stability: {}, topfail: {}, landed: null, backports: null };
@@ -141,7 +143,7 @@ function sourceBanner(res, tool) {
 // =====================================================================
 function stabilityControls() {
   const st = S.stability;
-  const presets = [7, 14, 30, 60, 90];
+  const presets = STAB_PRESETS;
   const rangeSel = el("select", {
     onchange: (e) => {
       const v = e.target.value;
@@ -149,7 +151,7 @@ function stabilityControls() {
       else { st.custom = false; st.days = +v; st.from = ""; st.to = ""; loadStability(false); }
       renderStability();
     },
-  }, ...presets.map((d) => el("option", { value: d, selected: !st.custom && st.days === d ? "" : null }, "Last " + d + " days")),
+  }, ...presets.map((d) => el("option", { value: d, selected: !st.custom && st.days === d ? "" : null }, periodLabel(d))),
     el("option", { value: "custom", selected: st.custom ? "" : null }, "Custom range…"));
 
   const row = el("div", { class: "controls" },
@@ -529,7 +531,11 @@ async function openPing(branchMeta, row) {
 // =====================================================================
 async function loadEmfStability(refresh) {
   EMFLOADING.stability = true; renderEmfStability();
-  try { EMFDATA.stability = await api("/api/emf/stability", { days: S.emf.stabilityDays }, refresh); }
+  const params = { days: S.emf.stabilityDays };
+  if (S.emf.stabilityCustom && S.emf.stabilityFrom) {
+    params.from = S.emf.stabilityFrom; params.to = S.emf.stabilityTo || CFG.today;
+  }
+  try { EMFDATA.stability = await api("/api/emf/stability", params, refresh); }
   catch (e) { EMFDATA.stability = { ok: false, kind: "error", error: String(e) }; }
   EMFLOADING.stability = false; renderEmfStability();
 }
@@ -549,13 +555,28 @@ async function loadEmfComing(refresh) {
 function renderEmfStability() {
   const root = $("#tab-emf-stability");
   if (!root) return;
-  const presets = [7, 14, 30, 60, 90];
+  const em = S.emf;
+  const rangeSel = el("select", {
+    onchange: (e) => {
+      const v = e.target.value;
+      if (v === "custom") em.stabilityCustom = true;
+      else { em.stabilityCustom = false; em.stabilityDays = +v; em.stabilityFrom = ""; em.stabilityTo = ""; loadEmfStability(false); }
+      renderEmfStability();
+    },
+  }, ...STAB_PRESETS.map((d) => el("option", { value: d, selected: !em.stabilityCustom && em.stabilityDays === d ? "" : null }, periodLabel(d))),
+    el("option", { value: "custom", selected: em.stabilityCustom ? "" : null }, "Custom range…"));
   const controls = el("div", { class: "controls" },
-    el("div", { class: "field" }, el("label", {}, "Period"),
-      el("select", { onchange: (e) => { S.emf.stabilityDays = +e.target.value; loadEmfStability(false); } },
-        ...presets.map((d) => el("option", { value: d, selected: S.emf.stabilityDays === d ? "" : null }, "Last " + d + " days")))),
+    el("div", { class: "field" }, el("label", {}, "Period"), rangeSel),
     el("span", { class: "muted small", style: "align-self:flex-end" },
       "CI pass-rate of the EMF nightly workflow" + (CFG.emf && CFG.emf.workflow ? " (" + CFG.emf.workflow + ")" : "") + "."));
+  if (em.stabilityCustom) {
+    const from = el("input", { type: "date", value: em.stabilityFrom || "", max: CFG.today, onchange: (e) => { em.stabilityFrom = e.target.value; } });
+    const to = el("input", { type: "date", value: em.stabilityTo || CFG.today, max: CFG.today, onchange: (e) => { em.stabilityTo = e.target.value; } });
+    controls.append(
+      el("div", { class: "field" }, el("label", {}, "From"), from),
+      el("div", { class: "field" }, el("label", {}, "To"), to),
+      el("button", { class: "btn filled sm", style: "align-self:flex-end", onclick: () => loadEmfStability(false) }, "Apply"));
+  }
   const out = [controls];
   const d = EMFDATA.stability;
   if (EMFLOADING.stability || !d) { out.push(el("div", { class: "card" }, spinnerBox("Querying GitHub Actions…"))); root.replaceChildren(...out); return; }
@@ -563,7 +584,8 @@ function renderEmfStability() {
   const sum = d.summary, rc = (r) => r == null ? "" : (r >= 90 ? "good" : r >= 70 ? "warn" : "bad");
   out.push(el("div", { class: "card" },
     el("h2", {}, "Build stability — " + (d.repo || "EMF")),
-    el("div", { class: "card-sub" }, "Workflow " + (d.workflow || "?") + " · last " + d.days + " days"),
+    el("div", { class: "card-sub" }, "Workflow " + (d.workflow || "?") + " · "
+      + (d.from ? d.from + " → " + (d.to || CFG.today) : "last " + d.days + " days")),
     el("div", { class: "tiles" },
       tile(rc(sum.pass_rate), sum.pass_rate == null ? "—" : sum.pass_rate + "%", "pass rate"),
       tile("", sum.runs, "runs"),

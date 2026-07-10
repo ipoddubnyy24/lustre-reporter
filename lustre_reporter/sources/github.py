@@ -29,11 +29,41 @@ def _api(path: str, jq: str, *, timeout: int = 90) -> ToolResult:
     return run_json(_GH, ["api", path, "--jq", jq], timeout=timeout)
 
 
-def workflow_runs(repo: str, workflow: str, *, limit: int = 80) -> ToolResult:
-    """Recent runs of one workflow: [{conclusion, status, created_at, head_branch, url}]."""
-    jq = ('[.workflow_runs[] | {conclusion, status, created_at, '
-          'head_branch, event, url: .html_url}]')
-    return _api(f"repos/{repo}/actions/workflows/{workflow}/runs?per_page={limit}", jq)
+_RUN_JQ = ('[.workflow_runs[] | {conclusion, status, created_at, '
+           'head_branch, event, url: .html_url}]')
+
+
+def workflow_runs(repo: str, workflow: str, *, since: str | None = None,
+                  until: str | None = None, per_page: int = 100,
+                  max_pages: int = 8) -> ToolResult:
+    """Runs of one workflow: [{conclusion, status, created_at, head_branch, event, url}].
+
+    Optionally bounded to a ``created`` date window (``since``/``until`` as
+    YYYY-MM-DD) and **paginated**, so a long window (e.g. a year) isn't silently
+    truncated at GitHub's one-page cap of 100.
+    """
+    created = None
+    if since and until:
+        created = f"{since}..{until}"
+    elif since:
+        created = f">={since}"
+    elif until:
+        created = f"<={until}"
+    runs: list = []
+    for page in range(1, max_pages + 1):
+        args = ["api", "-X", "GET", f"repos/{repo}/actions/workflows/{workflow}/runs",
+                "-F", f"per_page={per_page}", "-F", f"page={page}"]
+        if created:
+            args += ["-f", f"created={created}"]
+        args += ["--jq", _RUN_JQ]
+        res = run_json(_GH, args, timeout=90)
+        if not res.ok:
+            return res
+        page_runs = res.data or []
+        runs.extend(page_runs)
+        if len(page_runs) < per_page:      # last page reached
+            break
+    return ToolResult(ok=True, data=runs)
 
 
 def releases(repo: str, *, limit: int = 40) -> ToolResult:

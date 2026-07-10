@@ -20,19 +20,31 @@ def test_release_line():
 
 
 def test_collect_stability_ok(monkeypatch):
-    monkeypatch.setattr(emf.github, "workflow_runs", lambda repo, wf, limit=100: okt([
-        {"conclusion": "success", "created_at": "2026-07-10T00:00:00Z"},
-        {"conclusion": "failure", "created_at": "2020-01-01T00:00:00Z"}]))   # old -> filtered
-    monkeypatch.setattr(emf.util, "days_ago_iso", lambda d: "2026-01-01")
+    monkeypatch.setattr(emf.github, "workflow_runs",
+                        lambda repo, wf, **k: okt([{"conclusion": "success", "created_at": "2026-07-10T00:00:00Z"}]))
     r = emf.collect_stability(_cfg(), days=30)
-    assert r["ok"] and r["summary"]["runs"] == 1 and r["days"] == 30
+    assert r["ok"] and r["summary"]["runs"] == 1 and r["days"] == 30 and r["from"] is None
 
 
 def test_collect_stability_default_days_error(monkeypatch):
     monkeypatch.setattr(emf.github, "workflow_runs",
-                        lambda repo, wf, limit=100: ToolResult(ok=False, data=None, error="x", kind="auth"))
+                        lambda repo, wf, **k: ToolResult(ok=False, data=None, error="x", kind="auth"))
     r = emf.collect_stability(_cfg())                # days defaults to cfg.emf.stability_days (30)
     assert not r["ok"] and r["days"] == 30 and r["kind"] == "auth"
+
+
+def test_collect_stability_custom_range(monkeypatch):
+    seen = {}
+
+    def wf(repo, workflow, *, since=None, until=None, **k):
+        seen["since"], seen["until"] = since, until
+        return okt([{"conclusion": "success", "created_at": "2026-05-10T00:00:00Z"},   # in window
+                    {"conclusion": "failure", "created_at": "2026-01-01T00:00:00Z"}])   # before frm
+    monkeypatch.setattr(emf.github, "workflow_runs", wf)
+    r = emf.collect_stability(_cfg(), days=40, frm="2026-05-01", to="2026-06-01")
+    assert seen == {"since": "2026-05-01", "until": "2026-06-01"}
+    assert r["from"] == "2026-05-01" and r["to"] == "2026-06-01"
+    assert r["summary"]["runs"] == 1                 # out-of-window run dropped by the defensive bound
 
 
 def test_collect_landed(monkeypatch):
