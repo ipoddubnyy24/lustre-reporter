@@ -93,7 +93,8 @@ def _when(days) -> str:
     return f"in {days} days"
 
 
-def build_coming_html(cfg, line: dict, releases: list[dict], *, now: datetime | None = None) -> str:
+def build_coming_html(cfg, line: dict, releases: list[dict], *, untracked: list[dict] | None = None,
+                      now: datetime | None = None) -> str:
     now = now or now_pt()
     label, note = line.get("label"), line.get("note")
     parts = [_info(
@@ -102,6 +103,15 @@ def build_coming_html(cfg, line: dict, releases: list[dict], *, now: datetime | 
         + (f" — {_esc(note)}" if note else "") +
         ". Open EX Jira items are weighted by status and days-to-release. "
         "An estimate for planning, <strong>not</strong> a commitment.</p>", now)]
+    if not releases:
+        emfc = cfg.emf or {}
+        parts.append(f"<h2>No upcoming {_esc(label)} release to forecast</h2>"
+                     f"<p>No unreleased {_esc(label)} fixVersion in {_esc(emfc.get('jira_project', 'EX'))} "
+                     f"Jira has a release date later than {emfc.get('coming_grace_days', 30)} days ago.</p>")
+        if untracked:
+            names = ", ".join(f"{_esc(u.get('name'))} ({_esc(_when(u.get('days')))})" for u in untracked[:5])
+            parts.append(f"<p>Unreleased but not forecast: {names}. "
+                         f"Give the next {_esc(label)} version a release date in Jira to forecast it.</p>")
     for r in releases:
         parts.append(f"<h2>{_esc(r['name'])} — due {_esc(r.get('release_date') or 'no date')} "
                      f"({_esc(_when(r.get('days')))})</h2>")
@@ -157,12 +167,13 @@ def publish_all(cfg) -> dict:
             by_line.setdefault(r.get("line", "other"), []).append(r)
         tmpl = conf.get("coming_title_template", "EMF — Incoming: {line_label}")
         for ln in (emfc.get("release_lines") or []):
-            rels = by_line.get(ln.get("key"))
-            if not rels:
-                continue                      # no upcoming release on this line — skip
-            coming_pages.append(("coming:" + ln.get("key"),
-                                 tmpl.format(line_label=ln.get("label"), line=ln.get("key")),
-                                 build_coming_html(cfg, ln, rels, now=now)))
+            key = ln.get("key")
+            # A line with nothing to forecast still gets its page, so it never goes stale.
+            untracked = [u for u in coming.get("untracked") or [] if u.get("line") == key]
+            coming_pages.append(("coming:" + key,
+                                 tmpl.format(line_label=ln.get("label"), line=key),
+                                 build_coming_html(cfg, ln, by_line.get(key) or [],
+                                                   untracked=untracked, now=now)))
 
     results = []
     for t in dests:

@@ -92,7 +92,8 @@ def test_collect_coming_auto_grouping(monkeypatch):
     _wire_coming(monkeypatch, [
         {"name": "GCP-26Q2", "release_date": "2026-06-30", "released": False, "overdue": True},
         {"name": "ES6.3.9", "release_date": "2026-09-04", "released": False, "overdue": False},
-        {"name": "ES2018", "release_date": "2018-01-01", "released": False}],   # dropped by grace
+        {"name": "ES2018", "release_date": "2018-01-01", "released": False},    # dropped by grace
+        {"name": "GCP-26Q3", "release_date": None, "released": False}],         # undated: not forecast
         search_map={"GCP-26Q2": okt([{"key": "EX-9", "status": "In Progress", "summary": "g"}]),
                     "ES6.3.9": okt([{"key": "EX-1", "status": "In Review", "summary": "m"}])},
         prs=[{"number": 5, "url": "pr5", "isDraft": False, "title": "EX-1 fix", "headRefName": "x"}])
@@ -102,6 +103,8 @@ def test_collect_coming_auto_grouping(monkeypatch):
     assert [(x["name"], x["line"]) for x in r["releases"]] == [("ES6.3.9", "main"), ("GCP-26Q2", "gcp")]
     assert r["releases"][0]["line_label"] == "Main release"
     assert r["releases"][0]["items"][0]["prs"][0]["number"] == 5
+    assert [(u["name"], u["line"], u["days"]) for u in r["untracked"]] == [
+        ("GCP-26Q3", "gcp", None), ("ES2018", "main", -3000)]        # undated first, then newest
 
 
 def test_collect_coming_tracked_and_item_error(monkeypatch):

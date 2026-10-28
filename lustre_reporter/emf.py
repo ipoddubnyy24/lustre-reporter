@@ -85,6 +85,14 @@ def collect_coming(cfg) -> dict:
         return (lines.index(ln) if ln in lines else len(lines),
                 v.get("release_date") or "9999-99-99")
     chosen.sort(key=_rank)
+    # Unreleased versions left out (undated, or overdue past the grace window), so a
+    # line with nothing to forecast can still say why on its page.
+    picked = {v.get("name") for v in chosen}
+    untracked = [{"name": v.get("name"), "release_date": v.get("release_date"),
+                  "days": forecast.days_until(v.get("release_date")),
+                  "line": (release_line(v.get("name"), lines) or {}).get("key", "other")}
+                 for v in unreleased if v.get("name") not in picked]
+    untracked.sort(key=lambda u: u["release_date"] or "9999-99-99", reverse=True)  # undated, then newest
 
     pr_map: dict = {}
     prs = github.open_prs(emf.get("repo"))
@@ -111,4 +119,5 @@ def collect_coming(cfg) -> dict:
                          "line_note": ln.get("note", ""),
                          "items_ok": ires.ok,
                          "items_error": None if ires.ok else ires.error, **fc})
-    return {"ok": True, "project": proj, "repo": emf.get("repo"), "releases": releases}
+    return {"ok": True, "project": proj, "repo": emf.get("repo"), "releases": releases,
+            "untracked": untracked}

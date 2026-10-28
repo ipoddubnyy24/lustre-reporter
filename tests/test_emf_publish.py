@@ -123,16 +123,29 @@ def test_publish_all_ok(monkeypatch):
     assert {x["space"] for x in r["results"]} == {"1075183618", "3669721108"}   # both destinations
 
 
-def test_publish_all_skips_line_without_releases(monkeypatch):
+def test_publish_all_line_without_releases_still_published(monkeypatch):
     client = _FakeClient()
     monkeypatch.setattr(emf_publish, "Confluence", lambda site=None: client)
     monkeypatch.setattr(emf_publish.emf, "collect_landed", lambda c: LANDED_OK)
-    # only a main-line release -> the gcp line is skipped (no page)
-    monkeypatch.setattr(emf_publish.emf, "collect_coming",
-                        lambda c: {"ok": True, "releases": [COMING_OK["releases"][0]]})
+    # only a main-line release: the gcp page is still refreshed, naming the undated version
+    monkeypatch.setattr(emf_publish.emf, "collect_coming", lambda c: {
+        "ok": True, "releases": [COMING_OK["releases"][0]],
+        "untracked": [{"name": "GCP-26Q3", "release_date": None, "days": None, "line": "gcp"},
+                      {"name": "ES2018", "release_date": "2018-01-01", "days": -3000, "line": "main"}]})
     r = emf_publish.publish_all(_cfg())
-    assert {x["page"] for x in r["results"]} == {"landed", "coming:main"}   # gcp line skipped
-    assert len(r["results"]) == 4                                          # (landed + main) × 2 targets
+    assert {x["page"] for x in r["results"]} == {"landed", "coming:main", "coming:gcp"}
+    assert len(r["results"]) == 6                                          # 3 pages × 2 targets
+    gcp = next(c["html"] for c in client.calls if c["title"] == "EMF — Incoming: GCP")
+    assert "No upcoming GCP release to forecast" in gcp and "GCP-26Q3 (date TBD)" in gcp
+    assert "ES2018" not in gcp                                             # other lines' versions stay off
+    main = next(c["html"] for c in client.calls if c["title"] == "EMF — Incoming: Main release")
+    assert "No upcoming" not in main and "ES6.3.9" in main
+
+
+def test_render_coming_no_releases_no_untracked():
+    html = emf_publish.build_coming_html(_cfg(), {"key": "gcp", "label": "GCP"}, [])
+    assert "No upcoming GCP release to forecast" in html and "later than 30 days ago" in html
+    assert "Unreleased but not forecast" not in html
 
 
 def test_publish_all_coming_error(monkeypatch):
