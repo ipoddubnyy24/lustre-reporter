@@ -48,12 +48,32 @@ def test_collect_stability_custom_range(monkeypatch):
 
 
 def test_collect_landed(monkeypatch):
-    monkeypatch.setattr(emf.github, "landed", lambda repo, branch, tag=None: {
+    seen = {}
+    monkeypatch.setattr(emf.github, "default_branch", lambda repo: okt({"name": "master"}))
+    monkeypatch.setattr(emf.github, "landed", lambda repo, branch, tag=None: seen.update(branch=branch) or {
         "ok": True, "patches": [{"tickets": [{"key": "EX-1", "project": "EX"},
                                              {"key": "LU-2", "project": "LU"}]}]})
     ts = emf.collect_landed(_cfg(), tag="T")["patches"][0]["tickets"]
+    assert seen["branch"] == "master"            # release_branch unset: the repo's default branch
     assert ts[0]["url"].endswith("/EX-1") and ts[0]["is_cloud"] is True
     assert ts[1]["is_cloud"] is False
+
+
+def test_collect_landed_configured_branch(monkeypatch):
+    cfg, seen, lookups = _cfg(), {}, []
+    cfg.emf = {**cfg.emf, "release_branch": "release/sfa-next"}
+    monkeypatch.setattr(emf.github, "default_branch", lambda repo: lookups.append(repo) or okt({"name": "x"}))
+    monkeypatch.setattr(emf.github, "landed",
+                        lambda repo, branch, tag=None: seen.update(branch=branch) or {"ok": True, "patches": []})
+    assert emf.collect_landed(cfg)["ok"]
+    assert seen["branch"] == "release/sfa-next" and lookups == []
+
+
+def test_collect_landed_default_branch_error(monkeypatch):
+    monkeypatch.setattr(emf.github, "default_branch",
+                        lambda repo: ToolResult(ok=False, data=None, error="x", kind="auth"))
+    r = emf.collect_landed(_cfg())
+    assert not r["ok"] and r["kind"] == "auth"
 
 
 def _wire_coming(monkeypatch, versions, *, search_map=None, prs=None):

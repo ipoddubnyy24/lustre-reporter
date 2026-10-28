@@ -69,6 +69,17 @@ def ensure_cert(cert_dir: str) -> tuple[Path, Path]:
     return cert, key
 
 
+# How often a scheduler re-checks the wall clock while it waits. One time.sleep()
+# until the next slot stalls while the Mac sleeps (the timer counts awake time
+# only), so runs fired hours late or skipped slots.
+_POLL_S = 60
+
+
+def _wait_s(due, now) -> float:
+    """Seconds to sleep before comparing the wall clock with ``due`` again."""
+    return max(min((due - now).total_seconds(), _POLL_S), 1)
+
+
 def _confluence_targets(cfg) -> list:
     """(label, publish_all fn) for each enabled Confluence publisher (Lustre, EMF)."""
     from . import emf_publish, publish
@@ -93,8 +104,9 @@ def _start_confluence_scheduler(cfg) -> None:
 
     def loop() -> None:  # pragma: no cover - infinite background scheduler loop
         while True:
-            now = publish.now_pt()
-            time.sleep(max((publish.next_update_pt(now) - now).total_seconds(), 1))
+            due = publish.next_update_pt()
+            while publish.now_pt() < due:
+                time.sleep(_wait_s(due, publish.now_pt()))
             for label, fn in targets:
                 try:
                     res = fn(cfg)
@@ -124,8 +136,9 @@ def _start_slack_scheduler(cfg) -> None:
 
     def loop() -> None:  # pragma: no cover - infinite background scheduler loop
         while True:
-            now = daily_report.now_pt()
-            time.sleep(max((daily_report.next_run_pt(hour, now) - now).total_seconds(), 1))
+            due = daily_report.next_run_pt(hour)
+            while daily_report.now_pt() < due:
+                time.sleep(_wait_s(due, daily_report.now_pt()))
             try:
                 res = daily_report.send_daily(cfg)
                 print(f"[slack] daily report {daily_report.now_pt():%Y-%m-%d %H:%M %Z}: "

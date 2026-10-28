@@ -55,6 +55,13 @@ def test_compare(monkeypatch):
     assert github.compare("o/r", "a", "b").data["total"] == 3
 
 
+def test_default_branch(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(github, "run_json",
+                        lambda tool, args, timeout=90: (seen.update(a=args), _ok({"name": "master"}))[1])
+    assert github.default_branch("o/r").data["name"] == "master" and "repos/o/r" in seen["a"]
+
+
 def test_open_prs(monkeypatch):
     seen = {}
     monkeypatch.setattr(github, "run_json",

@@ -72,6 +72,11 @@ def releases(repo: str, *, limit: int = 40) -> ToolResult:
     return _api(f"repos/{repo}/releases?per_page={limit}", jq)
 
 
+def default_branch(repo: str) -> ToolResult:
+    """The repo's default branch: {name}."""
+    return _api(f"repos/{repo}", "{name: .default_branch}")
+
+
 def compare(repo: str, base: str, head: str) -> ToolResult:
     """`base...head` commits: {total, commits: [{sha, message, author, date, url}]}."""
     jq = ('{total: .total_commits, commits: [.commits[] | {sha: .sha[0:12], '

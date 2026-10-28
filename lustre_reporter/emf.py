@@ -49,7 +49,13 @@ def collect_stability(cfg, *, days: int | None = None, frm: str | None = None,
 
 def collect_landed(cfg, *, tag: str | None = None) -> dict:
     emf = cfg.emf or {}
-    result = github.landed(emf.get("repo"), emf.get("release_branch"), tag=tag)
+    repo, branch = emf.get("repo"), emf.get("release_branch")
+    if not branch:                          # unset: follow the repo's default branch
+        res = github.default_branch(repo)
+        if not res.ok:
+            return {"ok": False, "error": res.error, "kind": res.kind}
+        branch = res.data["name"]
+    result = github.landed(repo, branch, tag=tag)
     for p in result.get("patches", []):
         for t in p.get("tickets", []):
             t["url"] = f"{cfg.jira_browse_base(t['project'])}/{t['key']}"

@@ -14,6 +14,13 @@ def _no_emf_confluence(cfg):
     cfg.emf = {**cfg.emf, "confluence": {"enabled": False}}
 
 
+def test_wait_s_rechecks_the_wall_clock():
+    due = datetime(2026, 10, 28, 12, 0)
+    assert main_mod._wait_s(due, datetime(2026, 10, 28, 0, 5)) == 60        # long wait: re-check each minute
+    assert main_mod._wait_s(due, datetime(2026, 10, 28, 11, 59, 30)) == 30  # last stretch: sleep to the slot
+    assert main_mod._wait_s(due, datetime(2026, 10, 28, 13, 0)) == 1        # overdue (just woke): 1 s floor
+
+
 # ---------------- ensure_cert ----------------
 def test_ensure_cert_existing(tmp_path):
     cert = tmp_path / "cert.pem"

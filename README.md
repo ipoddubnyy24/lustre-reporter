@@ -61,7 +61,7 @@ cloud Atlassian token (the same `~/.jira-tool.json` one Confluence uses) for Jir
 | EMF report | Source | What it shows |
 |---|---|---|
 | Build stability | GitHub Actions (`nightly-build-6_3_x.yml`) | pass-rate trend of the nightly workflow |
-| Landed | GitHub Releases (CalVer) + commit compare | what merged onto `master` (`emf.release_branch`) since the newest CalVer release (`6.3.9-YYYYMMDDNN`), newest first; changes that release already shipped as backports are left out |
+| Landed | GitHub Releases (CalVer) + commit compare | what merged onto the repo's default branch (`master`; set `emf.release_branch` to override) since the newest CalVer release (`6.3.9-YYYYMMDDNN`), newest first; changes that release already shipped as backports are left out |
 | Coming | EX Jira items + `fixVersion` release dates | a **risk-weighted forecast** of what lands in each upcoming release |
 
 **The "Coming" forecast.** For each upcoming release (an unreleased EX
@@ -191,7 +191,8 @@ Each section has an **"Areas touched"** subsystem summary (e.g.
 with linked tickets (Jira, correct host) and patches (Gerrit).
 
 - **Automatic:** as the daemon, it republishes at **00:00 and 12:00
-  America/Los_Angeles** (DST-correct via `zoneinfo`).
+  America/Los_Angeles** (DST-correct via `zoneinfo`). It checks the wall clock
+  every minute, so a slot the Mac slept through runs within a minute of waking.
 - **Manual:** the **Publish to Confluence** button on the Landed tab, or
   `python3 -m lustre_reporter --publish-now`.
 

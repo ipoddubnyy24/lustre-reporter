@@ -225,6 +225,7 @@ def test_api_emf_stability_bad_from(monkeypatch, cfg):
 
 
 def test_api_emf_landed(monkeypatch, cfg):
+    monkeypatch.setattr(emf.github, "default_branch", lambda repo: okt({"name": "master"}))
     monkeypatch.setattr(emf.github, "landed", lambda repo, branch, tag=None:
                         {"ok": True, "patches": [{"tickets": [{"key": "EX-1", "project": "EX"}]}]})
     r = server.api_emf_landed(cfg, {})
