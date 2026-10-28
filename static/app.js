@@ -70,7 +70,8 @@ const S = {
   stability: { days: 30, custom: false, from: "", to: "" },
   landed: { days: 7, mode: "days", tag: "" },
   backports: { days: 120, onlyGaps: true },
-  emf: { stabilityDays: 30, stabilityCustom: false, stabilityFrom: "", stabilityTo: "", tag: "" },
+  emf: { stabilityDays: 30, stabilityCustom: false, stabilityFrom: "", stabilityTo: "", tag: "",
+         hidden: [] },     // product tables hidden on EMF Landed ("none" = Not assigned)
 };
 // stability/topfail are keyed by branch (one section per selected branch)
 const DATA = { stability: {}, topfail: {}, landed: null, backports: null };
@@ -677,15 +678,33 @@ function renderEmfLanded() {
   else {
     // One table per product (config order); a commit for several products shows under each.
     if (d.products_error) card.append(el("div", { class: "muted small" }, "Jira fixVersions unavailable: " + d.products_error + ". EX tickets are listed under Not assigned."));
-    d.products.forEach((pr) => {
-      const ps = d.patches.filter((p) => (p.products || []).includes(pr.key));
-      card.append(el("h3", { title: pr.note || "" }, pr.label + " (" + ps.length + ")"), table(ps));
-    });
-    const rest = d.patches.filter((p) => !(p.products || []).length);
-    card.append(el("h3", { title: "No ticket, or no fixVersion that names a product" }, "Not assigned to a product (" + rest.length + ")"), table(rest));
+    const groups = d.products.map((pr) => ({ key: pr.key, label: pr.label, chip: pr.label, note: pr.note,
+      patches: d.patches.filter((p) => (p.products || []).includes(pr.key)) }));
+    groups.push({ key: "none", label: "Not assigned to a product", chip: "Not assigned",
+      note: "No ticket, or no fixVersion that names a product", patches: d.patches.filter((p) => !(p.products || []).length) });
+    card.append(el("div", { style: "display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 4px" },
+      el("span", { class: "muted small" }, "Show:"), ...groups.map((g) => emfProductChip(g, groups))));
+    groups.filter((g) => !S.emf.hidden.includes(g.key)).forEach((g) =>
+      card.append(el("h3", { title: g.note || "" }, g.label + " (" + g.patches.length + ")"), table(g.patches)));
   }
   out.push(card);
   root.replaceChildren(...out);
+}
+function emfProductChip(g, groups) {
+  const on = !S.emf.hidden.includes(g.key);
+  const toggle = () => {
+    const hidden = on ? [...S.emf.hidden, g.key] : S.emf.hidden.filter((k) => k !== g.key);
+    if (groups.every((x) => hidden.includes(x.key))) return;      // keep at least one table shown
+    S.emf.hidden = hidden;
+    try { localStorage.setItem("lr.emfHidden", JSON.stringify(hidden)); } catch (e) { /* ignore */ }
+    renderEmfLanded();
+  };
+  return el("span", {
+    class: "chip branch-toggle " + (on ? "primary on" : "outline"),
+    title: (on ? "Showing " : "Hidden: ") + g.label + ", click to " + (on ? "hide" : "show"),
+    role: "button", tabindex: "0", onclick: toggle,
+    onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } },
+  }, g.chip + " · " + g.patches.length);
 }
 
 function probBar(p, tier) {
@@ -829,6 +848,10 @@ async function boot() {
   try { saved = JSON.parse(localStorage.getItem("lr.selected") || "null"); } catch (e) { /* ignore */ }
   S.selected = (Array.isArray(saved) && saved.length && saved.every((k) => allKeys.includes(k)))
     ? allKeys.filter((k) => saved.includes(k)) : allKeys.slice();
+  try {
+    const hidden = JSON.parse(localStorage.getItem("lr.emfHidden") || "[]");
+    if (Array.isArray(hidden)) S.emf.hidden = hidden.filter((k) => typeof k === "string");
+  } catch (e) { /* ignore */ }
   renderBranchChips();
   $$(".tabs .tab-btn").forEach((btn) => btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
   if (CFG.emf_enabled) {
