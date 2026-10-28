@@ -111,10 +111,16 @@ def _areas(patches: list[dict]) -> list[list]:
 
 
 def landed(repo: str, branch: str, *, tag: str | None = None) -> dict:
-    """What merged onto ``branch`` since the newest CalVer release (or ``tag``).
+    """What merged onto ``branch`` since the newest CalVer release (or ``tag``),
+    newest first.
+
+    A release cut from a release branch is not an ancestor of ``branch``, so
+    ``base...branch`` also holds the originals of changes it shipped as
+    backports (subject ``... (#orig) (#backport)``). Those are left out and
+    counted in ``in_release``.
 
     Mirrors the Lustre "since last tag" changelog shape:
-    {ok, repo, branch, tag, tag_date, manual, ahead, count, patches[], areas}.
+    {ok, repo, branch, tag, tag_date, manual, ahead, in_release, count, patches[], areas}.
     """
     rel = releases(repo)
     if not rel.ok:
@@ -131,9 +137,15 @@ def landed(repo: str, branch: str, *, tag: str | None = None) -> dict:
     cmp = compare(repo, base, branch)
     if not cmp.ok:
         return {"ok": False, "error": cmp.error, "kind": cmp.kind, "tag": base}
-    commits = (cmp.data or {}).get("commits") or []
-    patches = [p for p in (_parse_commit(c, repo) for c in commits) if p]
+    back = compare(repo, branch, base)      # in the release but not on the branch
+    if not back.ok:
+        return {"ok": False, "error": back.error, "kind": back.kind, "tag": base}
+    shipped = {int(n) for c in (back.data or {}).get("commits") or []
+               for n in _PR_RE.findall((c.get("message") or "").split("\n", 1)[0])}
+    commits = (cmp.data or {}).get("commits") or []      # GitHub lists oldest first
+    parsed = [p for p in (_parse_commit(c, repo) for c in reversed(commits)) if p]
+    patches = [p for p in parsed if p["number"] not in shipped]
     return {"ok": True, "repo": repo, "branch": branch, "tag": base,
             "tag_date": (base_date or "")[:10] or None, "manual": bool(tag),
-            "ahead": (cmp.data or {}).get("total"), "count": len(patches),
-            "patches": patches, "areas": _areas(patches)}
+            "ahead": (cmp.data or {}).get("total"), "in_release": len(parsed) - len(patches),
+            "count": len(patches), "patches": patches, "areas": _areas(patches)}

@@ -90,10 +90,34 @@ def test_landed_ok(monkeypatch):
         [{"tag": "T1", "published_at": "2026-06-25T00:00:00Z", "draft": False}]))
     monkeypatch.setattr(github, "compare", lambda repo, base, head: _ok({"total": 2, "commits": [
         {"message": "EX-1 x: y (#5)", "author": "A", "date": "2026-07-01T00:00:00Z"},
-        {"message": "Bump CalVer to z (#6)"}]}))
+        {"message": "Bump CalVer to z (#6)"}]}) if head == "6.3.8" else _ok({"total": 0, "commits": []}))
     r = github.landed("o/r", "6.3.8")
     assert r["ok"] and r["tag"] == "T1" and r["tag_date"] == "2026-06-25"
-    assert r["count"] == 1 and r["ahead"] == 2 and r["manual"] is False
+    assert r["count"] == 1 and r["ahead"] == 2 and r["manual"] is False and r["in_release"] == 0
+
+
+def test_landed_drops_backports_newest_first(monkeypatch):
+    # T1 was cut from a release branch: it shipped #6 as backport #9, so master's
+    # #6 is left out. Only backport subjects count, not PR refs in their bodies.
+    monkeypatch.setattr(github, "releases", lambda repo, limit=40: _ok(
+        [{"tag": "T1", "published_at": "2026-06-25", "draft": False}]))
+    ahead = {"total": 3, "commits": [{"message": "EX-1 a (#5)", "date": "2026-07-01"},
+                                     {"message": "EX-2 b (#6)", "date": "2026-07-02"},
+                                     {"message": "EX-3 c (#7)", "date": "2026-07-03"}]}
+    back = {"total": 1, "commits": [{"message": "EX-2 b (#6) (#9)\n\nsquashed EX-1 a (#5)"}]}
+    monkeypatch.setattr(github, "compare", lambda repo, base, head: _ok(ahead if base == "T1" else back))
+    r = github.landed("o/r", "master")
+    assert [p["number"] for p in r["patches"]] == [7, 5]
+    assert r["count"] == 2 and r["in_release"] == 1 and r["ahead"] == 3
+
+
+def test_landed_backport_compare_fail(monkeypatch):
+    monkeypatch.setattr(github, "releases", lambda repo, limit=40: _ok(
+        [{"tag": "T1", "published_at": "2026-06-25", "draft": False}]))
+    monkeypatch.setattr(github, "compare", lambda repo, base, head:
+                        _ok({"total": 0, "commits": []}) if base == "T1" else _err("back", "auth"))
+    r = github.landed("o/r", "b")
+    assert not r["ok"] and r["kind"] == "auth" and r["tag"] == "T1"
 
 
 def test_landed_with_tag(monkeypatch):

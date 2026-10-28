@@ -162,7 +162,7 @@ class Config:
     emf: dict = field(default_factory=lambda: {
         "enabled": True,
         "repo": "whamcloud/exascaler-management-framework",
-        "release_branch": "6.3.8",
+        "release_branch": "master",  # where EMF work lands; the nightly builds it
         "nightly_workflow": "nightly-build-6_3_x.yml",
         "stability_days": 30,
         "jira_project": "EX",

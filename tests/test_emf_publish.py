@@ -50,6 +50,11 @@ def test_render_landed_ok():
     assert "commits merged onto EMF (" in html and "6.3.8" not in html
 
 
+def test_render_landed_notes_backports():
+    html = emf_publish.build_landed_html(_cfg(), {**LANDED_OK, "in_release": 37})
+    assert "Already in T as backports, so not listed: 37." in html
+
+
 def test_render_landed_unavailable():
     html = emf_publish.build_landed_html(_cfg(), {"ok": False, "error": "no releases"})
     assert "Unavailable" in html and "no releases" in html

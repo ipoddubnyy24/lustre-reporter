@@ -52,6 +52,9 @@ def build_landed_html(cfg, landed: dict, *, now: datetime | None = None) -> str:
         return "".join(parts)
     parts.append(f"<h2>Since {_esc(landed.get('tag'))} ({_esc(landed.get('tag_date'))}) — "
                  f"{landed.get('count', 0)} merged</h2>")
+    if landed.get("in_release"):
+        parts.append(f"<p><em>Already in {_esc(landed.get('tag'))} as backports, so not listed: "
+                     f"{landed['in_release']}.</em></p>")
     parts.append(_areas_line(landed.get("areas")))
     parts.append(_table(cfg, landed.get("patches")))
     parts.append(_companion_note(cfg))

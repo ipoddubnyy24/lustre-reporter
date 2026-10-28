@@ -36,7 +36,7 @@
     "_comment": "EMF (EXAScaler Management Framework) reports — needs `gh` on PATH (GitHub) + the cloud Atlassian token (Jira). track_versions empty = auto (unreleased EX fixVersions dated within coming_grace_days). risk_bands: first band whose max_days >= days-to-release wins; overdue => max_days 0.",
     "enabled": true,
     "repo": "whamcloud/exascaler-management-framework",
-    "release_branch": "6.3.8",
+    "release_branch": "master",
     "nightly_workflow": "nightly-build-6_3_x.yml",
     "stability_days": 30,
     "jira_project": "EX",
