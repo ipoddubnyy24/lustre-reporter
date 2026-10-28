@@ -63,7 +63,7 @@ function button(text, attrs, onClick) {
 async function load(refresh) {
   actions.replaceChildren();
   if (!/^\d+$/.test(RUN)) {
-    doc.innerHTML = '<div class="banner error">No run id. Open this page from an Analyze link on the EMF Build stability tab.</div>';
+    doc.innerHTML = '<div class="banner error">No run id. Open this page from an analyze link on the EMF Build stability tab.</div>';
     return;
   }
   doc.innerHTML = '<div class="loading"><span class="spinner"></span>Analyzing run ' + esc(RUN)

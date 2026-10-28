@@ -616,7 +616,7 @@ function renderEmfStability() {
       el("td", {}, chip(r.conclusion)), el("td", { class: "nowrap" }, fmtDate(r.date, true)),
       el("td", { class: "mono small" }, r.branch || "—"), el("td", { class: "small muted" }, r.event || ""),
       el("td", {}, r.url ? el("a", { href: r.url, target: "_blank" }, "open") : "—"),
-      el("td", {}, r.conclusion === "failure" && r.id ? el("a", { href: analysisHref(r.id), target: "_blank", title: "Open the failure analysis (Markdown) in a new tab" }, "Analyze") : "")));
+      el("td", {}, r.conclusion === "failure" && r.id ? el("a", { href: analysisHref(r.id), target: "_blank", title: "Open the failure analysis (Markdown) in a new tab" }, "analyze") : "")));
     rcard.append(el("div", { class: "scroll-x" }, el("table", {},
       el("thead", {}, el("tr", {}, el("th", {}, "Result"), el("th", {}, "When"), el("th", {}, "Branch"), el("th", {}, "Event"), el("th", {}, "Link"), el("th", {}, "Analysis"))),
       el("tbody", {}, ...rows))));
