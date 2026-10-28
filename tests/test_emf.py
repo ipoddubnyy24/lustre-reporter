@@ -50,6 +50,7 @@ def test_collect_stability_custom_range(monkeypatch):
 def test_collect_landed(monkeypatch):
     seen = {}
     monkeypatch.setattr(emf.github, "default_branch", lambda repo: okt({"name": "master"}))
+    monkeypatch.setattr(emf.jira, "fix_versions", lambda keys: okt({}))
     monkeypatch.setattr(emf.github, "landed", lambda repo, branch, tag=None: seen.update(branch=branch) or {
         "ok": True, "patches": [{"tickets": [{"key": "EX-1", "project": "EX"},
                                              {"key": "LU-2", "project": "LU"}]}]})
@@ -57,6 +58,50 @@ def test_collect_landed(monkeypatch):
     assert seen["branch"] == "master"            # release_branch unset: the repo's default branch
     assert ts[0]["url"].endswith("/EX-1") and ts[0]["is_cloud"] is True
     assert ts[1]["is_cloud"] is False
+
+
+def _landed_with(monkeypatch, subjects, fixes):
+    monkeypatch.setattr(emf.github, "default_branch", lambda repo: okt({"name": "master"}))
+    monkeypatch.setattr(emf.github, "landed", lambda repo, branch, tag=None: {
+        "ok": True, "patches": [{"number": n, "tickets": emf.util.parse_tickets(s)}
+                                for n, s in enumerate(subjects)]})
+    asked = []
+    monkeypatch.setattr(emf.jira, "fix_versions", lambda keys: asked.extend(keys) or fixes)
+    return asked
+
+
+def test_collect_landed_splits_by_product(monkeypatch):
+    asked = _landed_with(monkeypatch, [
+        "EX-1: both lines",          # ES6.3.10 + ES7.0.0_Beta -> exa6 and exa7
+        "EXM-2: nvmesh",             # project -> sd
+        "GCP-3 google",              # project -> gcp
+        "EX-4: gcp quarter",         # fixVersion GCP-26Q3 -> gcp
+        "EX-5: no fix version",      # -> unassigned
+        "Fix cargo deny (#5979)"],   # no ticket -> unassigned
+        okt({"EX-1": ["ES6.3.10", "ES7.0.0_Beta"], "EX-4": ["GCP-26Q3"], "EX-5": []}))
+    r = emf.collect_landed(_cfg())
+    assert asked == ["EX-1", "EX-4", "EX-5"]                       # only EX keys are looked up
+    assert [p["products"] for p in r["patches"]] == [["exa6", "exa7"], ["sd"], ["gcp"], ["gcp"], [], []]
+    assert [(x["label"], x["count"]) for x in r["products"]] == [
+        ("EXA6", 1), ("EXA7", 1), ("EXA SD", 1), ("EXA GCP", 2)]   # config order, EXA6 first
+    assert r["unassigned"] == 2 and "products_error" not in r
+    assert r["patches"][1]["tickets"][0]["is_cloud"] is True       # EXM links go to Jira Cloud
+
+
+def test_collect_landed_fix_versions_error(monkeypatch):
+    _landed_with(monkeypatch, ["EX-1: x", "EXM-2: y"],
+                 ToolResult(ok=False, data=None, error="jira down", kind="error"))
+    r = emf.collect_landed(_cfg())
+    assert r["products_error"] == "jira down"
+    assert [p["products"] for p in r["patches"]] == [[], ["sd"]]   # EX unassigned, EXM still by project
+
+
+def test_collect_landed_without_products(monkeypatch):
+    cfg = _cfg()
+    cfg.emf = {**cfg.emf, "products": []}
+    _landed_with(monkeypatch, ["EX-1: x"], okt({}))
+    r = emf.collect_landed(cfg)
+    assert "products" not in r and "products" not in r["patches"][0]
 
 
 def test_collect_landed_configured_branch(monkeypatch):

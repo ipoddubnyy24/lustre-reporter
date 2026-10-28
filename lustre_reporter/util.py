@@ -9,7 +9,7 @@ from datetime import date, timedelta
 #   "LU-20388 pcc: fix ..."   "EX-14806 kernel: ..."   "DDN-1234 ..."
 # Match the common trackers. Word-boundary + explicit prefixes keeps this from
 # matching things like "UTF-8" or "SHA-1".
-TICKET_RE = re.compile(r"\b(LU|EX|DDN|EHT|GCP|IME)-(\d+)\b")
+TICKET_RE = re.compile(r"\b(LU|EX|EXM|DDN|EHT|GCP|IME)-(\d+)\b")
 
 
 def parse_tickets(text: str) -> list[dict]:
@@ -37,7 +37,7 @@ def ticket_keys(text: str) -> set[str]:
 # — so allow space, ':' or '-' as the separator after the ref.
 # (NB: near-identical private copies still live in git_tags/publish/daily_report/
 # backport — pre-existing duplication that could later collapse onto these.)
-TICKET_PREFIX_RE = re.compile(r"^\s*((?:LU|EX|DDN|EHT|GCP|IME|RM)-\d+[\s:-]+)+", re.I)
+TICKET_PREFIX_RE = re.compile(r"^\s*((?:LU|EX|EXM|DDN|EHT|GCP|IME|RM)-\d+[\s:-]+)+", re.I)
 
 
 def subsystem(subject: str) -> str:

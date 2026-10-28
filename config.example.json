@@ -58,6 +58,12 @@
       {"key": "main", "label": "Main release", "match": "^ES", "note": "the ES6.3.x / ES7.x stream"},
       {"key": "gcp", "label": "GCP", "match": "^GCP", "note": "Google Cloud quarterly builds"}
     ],
+    "products": [
+      {"key": "exa6", "label": "EXA6", "fix_versions": "^ES6", "note": "EX fixVersion ES6.x"},
+      {"key": "exa7", "label": "EXA7", "fix_versions": "^ES7", "note": "EX fixVersion ES7.x"},
+      {"key": "sd", "label": "EXA SD", "projects": ["EXM"], "note": "EXM tickets"},
+      {"key": "gcp", "label": "EXA GCP", "projects": ["GCP"], "fix_versions": "^GCP", "note": "GCP tickets or EX fixVersion GCP-*"}
+    ],
     "confluence": {
       "_comment": "Publish EMF Landed + one Incoming page per release line to every entry in `targets` (space_id = numeric id, parent_id = folder id). space_id/parent_id are the legacy single-target fallback.",
       "enabled": true,
@@ -74,7 +80,7 @@
   "gerrit_web_base": "https://review.whamcloud.com",
   "jira_lu_base": "https://jira.whamcloud.com/browse",
   "jira_cloud_base": "https://ime-ddn.atlassian.net/browse",
-  "cloud_projects": ["EX", "DDN", "EHT", "GCP", "IME"],
+  "cloud_projects": ["EX", "EXM", "DDN", "EHT", "GCP", "IME"],
   "branches": [
     {
       "key": "es6",

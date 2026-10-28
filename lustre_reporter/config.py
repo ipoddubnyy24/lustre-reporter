@@ -63,7 +63,7 @@ class Config:
     jira_cloud_base: str = "https://ime-ddn.atlassian.net/browse"
 
     # Jira project prefixes that route to the DDN *cloud* instance (jira -I cloud).
-    cloud_projects: tuple[str, ...] = ("EX", "DDN", "EHT", "GCP", "IME")
+    cloud_projects: tuple[str, ...] = ("EX", "EXM", "DDN", "EHT", "GCP", "IME")
 
     branches: list[Branch] = field(
         default_factory=lambda: [
@@ -196,6 +196,16 @@ class Config:
              "note": "the ES6.3.x / ES7.x stream"},
             {"key": "gcp", "label": "GCP", "match": r"^GCP",
              "note": "Google Cloud quarterly builds"},
+        ],
+        # Landed page tables, in this order. Everything lands on master; a commit
+        # goes under every product its tickets name, by Jira project (`projects`)
+        # or by an EX ticket's fixVersion (`fix_versions` regex).
+        "products": [
+            {"key": "exa6", "label": "EXA6", "fix_versions": r"^ES6", "note": "EX fixVersion ES6.x"},
+            {"key": "exa7", "label": "EXA7", "fix_versions": r"^ES7", "note": "EX fixVersion ES7.x"},
+            {"key": "sd", "label": "EXA SD", "projects": ["EXM"], "note": "EXM tickets"},
+            {"key": "gcp", "label": "EXA GCP", "projects": ["GCP"], "fix_versions": r"^GCP",
+             "note": "GCP tickets or EX fixVersion GCP-*"},
         ],
         # Auto-publish the EMF landed + per-line "coming" forecast to Confluence
         # (the "exa" folder in the personal space, twice daily as the daemon).

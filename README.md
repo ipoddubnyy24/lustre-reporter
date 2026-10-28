@@ -61,7 +61,7 @@ cloud Atlassian token (the same `~/.jira-tool.json` one Confluence uses) for Jir
 | EMF report | Source | What it shows |
 |---|---|---|
 | Build stability | GitHub Actions (`nightly-build-6_3_x.yml`) | pass-rate trend of the nightly workflow |
-| Landed | GitHub Releases (CalVer) + commit compare | what merged onto the repo's default branch (`master`; set `emf.release_branch` to override) since the newest CalVer release (`6.3.9-YYYYMMDDNN`), newest first; changes that release already shipped as backports are left out |
+| Landed | GitHub Releases (CalVer) + commit compare | what merged onto the repo's default branch (`master`; set `emf.release_branch` to override) since the newest CalVer release (`6.3.9-YYYYMMDDNN`), newest first; changes that release already shipped as backports are left out. Split into one table per product (`emf.products`: EXA6, EXA7, EXA SD, EXA GCP) by each commit's tickets: EXM/GCP keys by project, EX keys by fixVersion |
 | Coming | EX Jira items + `fixVersion` release dates | a **risk-weighted forecast** of what lands in each upcoming release |
 
 **The "Coming" forecast.** For each upcoming release (an unreleased EX

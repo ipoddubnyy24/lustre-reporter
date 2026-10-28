@@ -101,4 +101,4 @@ def test_load_config_scalar_only(monkeypatch, tmp_path):
     monkeypatch.setenv("LUSTRE_REPORTER_CONFIG", str(p))
     c = load_config()
     assert c.port == 1234 and [b.key for b in c.branches] == ["es6", "es7"]
-    assert c.cloud_projects == ("EX", "DDN", "EHT", "GCP", "IME")
+    assert c.cloud_projects == ("EX", "EXM", "DDN", "EHT", "GCP", "IME")

@@ -86,6 +86,28 @@ def test_search_scalar_payload(monkeypatch):
     assert jira.search("q").data == []
 
 
+def test_fix_versions_batches(monkeypatch):
+    paths = []
+
+    def fake(path):
+        paths.append(path)
+        return {"issues": [{"key": "EX-1", "fields": {"fixVersions": [{"name": "ES6.3.10"}, {"name": "ES7.0.0"}]}},
+                           {"key": "EX-2", "fields": {}}]}
+    monkeypatch.setattr(jira.atlassian, "cloud_get", fake)
+    r = jira.fix_versions([f"EX-{n}" for n in range(1, 52)])         # 51 keys -> 2 batches of <= 50
+    assert r.ok and len(paths) == 2 and "search%2Fjql" not in paths[0] and "/search/jql?" in paths[0]
+    assert r.data == {"EX-1": ["ES6.3.10", "ES7.0.0"], "EX-2": []}
+    assert jira.fix_versions([]).data == {} and len(paths) == 2      # no keys -> no request
+
+
+def test_fix_versions_error(monkeypatch):
+    def boom(path):
+        raise jira.atlassian.AtlassianError("boom")
+    monkeypatch.setattr(jira.atlassian, "cloud_get", boom)
+    r = jira.fix_versions(["EX-1"])
+    assert not r.ok and "boom" in r.error
+
+
 def test_versions_ok(monkeypatch):
     monkeypatch.setattr(jira.atlassian, "cloud_get", lambda path: [
         {"name": "ES6.3.9", "releaseDate": "2026-09-04", "released": False, "overdue": False},

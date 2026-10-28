@@ -14,7 +14,7 @@ def test_parse_tickets_multiple_and_dedup():
 
 
 def test_parse_tickets_all_prefixes():
-    for p in ["LU", "EX", "DDN", "EHT", "GCP", "IME"]:
+    for p in ["LU", "EX", "EXM", "DDN", "EHT", "GCP", "IME"]:
         assert util.parse_tickets(f"{p}-5 x")[0]["project"] == p
 
 

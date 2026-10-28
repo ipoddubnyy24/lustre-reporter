@@ -7,6 +7,8 @@ the DDN cloud instance (``-I cloud``). The caller decides which via the
 
 from __future__ import annotations
 
+import urllib.parse
+
 from ..cli import ToolResult, run_json
 from . import atlassian
 
@@ -73,6 +75,24 @@ def search(jql: str, *, cloud: bool = False, limit: int = 50) -> ToolResult:
     if not isinstance(issues, list):
         issues = []
     return ToolResult(ok=True, data=[normalize(i) for i in issues])
+
+
+def fix_versions(keys: list[str]) -> ToolResult:
+    """fixVersion names per issue (Jira Cloud REST): {key: [name, ...]}.
+
+    The search/jql endpoint skips keys that don't exist instead of failing.
+    """
+    out: dict = {}
+    for i in range(0, len(keys), 50):
+        q = urllib.parse.urlencode({"jql": "key in (%s)" % ",".join(keys[i:i + 50]),
+                                    "fields": "fixVersions", "maxResults": 100})
+        try:
+            data = atlassian.cloud_get("/rest/api/3/search/jql?" + q) or {}
+        except atlassian.AtlassianError as exc:
+            return ToolResult(ok=False, data=None, error=str(exc), kind="error")
+        for it in data.get("issues") or []:
+            out[it.get("key")] = [v.get("name") for v in (it.get("fields") or {}).get("fixVersions") or []]
+    return ToolResult(ok=True, data=out)
 
 
 def versions(project: str) -> ToolResult:

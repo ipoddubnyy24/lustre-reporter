@@ -56,7 +56,23 @@ def build_landed_html(cfg, landed: dict, *, now: datetime | None = None) -> str:
         parts.append(f"<p><em>Already in {_esc(landed.get('tag'))} as backports, so not listed: "
                      f"{landed['in_release']}.</em></p>")
     parts.append(_areas_line(landed.get("areas")))
-    parts.append(_table(cfg, landed.get("patches")))
+    products, patches = landed.get("products"), landed.get("patches") or []
+    if not products:
+        parts.append(_table(cfg, patches))
+        parts.append(_companion_note(cfg))
+        return "".join(parts)
+    if landed.get("products_error"):
+        parts.append(f"<p><strong>Jira fixVersions unavailable:</strong> {_esc(landed['products_error'])}. "
+                     "EX tickets are listed under Not assigned.</p>")
+    parts.append("<p><em>Split by ticket: " + " · ".join(
+        f"{_esc(pr.get('label'))} = {_esc(pr.get('note'))}" for pr in products if pr.get("note"))
+        + ". A commit for more than one product is listed under each.</em></p>")
+    for pr in products:
+        rows = [p for p in patches if pr["key"] in (p.get("products") or [])]
+        parts.append(f"<h3>{_esc(pr.get('label'))} ({len(rows)})</h3>" + _table(cfg, rows))
+    rest = [p for p in patches if not p.get("products")]
+    parts.append(f"<h3>Not assigned to a product ({len(rest)})</h3>"
+                 "<p><em>No ticket, or no fixVersion that names a product.</em></p>" + _table(cfg, rest))
     parts.append(_companion_note(cfg))
     return "".join(parts)
 

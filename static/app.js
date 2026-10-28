@@ -32,7 +32,7 @@ const fmtDate = (s, withTime) => {
   return withTime ? str.slice(0, 16).replace("T", " ") : str.slice(0, 10);
 };
 const spinnerBox = (txt) => el("div", { class: "loading" }, el("span", { class: "spinner" }), txt || "Loading…");
-const stripTicket = (s) => (s || "").replace(/^((?:LU|EX|DDN|EHT|GCP|IME|RM)-\d+[\s:-]+)+/i, "");
+const stripTicket = (s) => (s || "").replace(/^((?:LU|EX|EXM|DDN|EHT|GCP|IME|RM)-\d+[\s:-]+)+/i, "");
 const STAB_PRESETS = [7, 14, 30, 60, 90, 120, 180, 365];
 const periodLabel = (d) => (+d === 365 ? "Last 1 year" : "Last " + d + " days");
 
@@ -663,13 +663,27 @@ function renderEmfLanded() {
   const card = el("div", { class: "card" }, head);
   if (!d.count) { card.append(el("div", { class: "empty" }, "Nothing merged since " + (d.tag || "the last release") + ".")); out.push(card); root.replaceChildren(...out); return; }
   if (d.areas && d.areas.length) card.append(el("div", { class: "muted small", style: "margin:2px 0 12px" }, "Areas: " + d.areas.map((a) => a[0] + " ×" + a[1]).join(" · ")));
-  const rows = d.patches.map((p) => el("tr", {},
-    el("td", {}, p.url ? el("a", { href: p.url, target: "_blank", class: "mono" }, p.number ? "#" + p.number : "commit") : "—"),
-    el("td", {}, ticketLinks(p.tickets)), el("td", { class: "subject" }, stripTicket(p.subject)),
-    el("td", { class: "owner nowrap" }, p.owner || "—"), el("td", { class: "nowrap" }, fmtDate(p.date))));
-  card.append(el("div", { class: "scroll-x" }, el("table", {},
-    el("thead", {}, el("tr", {}, el("th", {}, "PR"), el("th", {}, "Ticket"), el("th", {}, "Subject"), el("th", {}, "Author"), el("th", {}, "Merged"))),
-    el("tbody", {}, ...rows))));
+  const table = (patches) => {
+    if (!patches.length) return el("div", { class: "empty" }, "None.");
+    const rows = patches.map((p) => el("tr", {},
+      el("td", {}, p.url ? el("a", { href: p.url, target: "_blank", class: "mono" }, p.number ? "#" + p.number : "commit") : "—"),
+      el("td", {}, ticketLinks(p.tickets)), el("td", { class: "subject" }, stripTicket(p.subject)),
+      el("td", { class: "owner nowrap" }, p.owner || "—"), el("td", { class: "nowrap" }, fmtDate(p.date))));
+    return el("div", { class: "scroll-x" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "PR"), el("th", {}, "Ticket"), el("th", {}, "Subject"), el("th", {}, "Author"), el("th", {}, "Merged"))),
+      el("tbody", {}, ...rows)));
+  };
+  if (!d.products || !d.products.length) card.append(table(d.patches));
+  else {
+    // One table per product (config order); a commit for several products shows under each.
+    if (d.products_error) card.append(el("div", { class: "muted small" }, "Jira fixVersions unavailable: " + d.products_error + ". EX tickets are listed under Not assigned."));
+    d.products.forEach((pr) => {
+      const ps = d.patches.filter((p) => (p.products || []).includes(pr.key));
+      card.append(el("h3", { title: pr.note || "" }, pr.label + " (" + ps.length + ")"), table(ps));
+    });
+    const rest = d.patches.filter((p) => !(p.products || []).length);
+    card.append(el("h3", { title: "No ticket, or no fixVersion that names a product" }, "Not assigned to a product (" + rest.length + ")"), table(rest));
+  }
   out.push(card);
   root.replaceChildren(...out);
 }

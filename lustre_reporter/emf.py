@@ -56,11 +56,39 @@ def collect_landed(cfg, *, tag: str | None = None) -> dict:
             return {"ok": False, "error": res.error, "kind": res.kind}
         branch = res.data["name"]
     result = github.landed(repo, branch, tag=tag)
-    for p in result.get("patches", []):
+    patches = result.get("patches", [])
+    for p in patches:
         for t in p.get("tickets", []):
             t["url"] = f"{cfg.jira_browse_base(t['project'])}/{t['key']}"
             t["is_cloud"] = cfg.is_cloud_project(t["project"])
+    products = emf.get("products") or []
+    if result.get("ok") and products:
+        proj = emf.get("jira_project", "EX")
+        fres = jira.fix_versions(sorted({t["key"] for p in patches for t in p.get("tickets", [])
+                                         if t["project"] == proj}))
+        fixes = fres.data if fres.ok else {}
+        for p in patches:
+            p["products"] = _products_for(p.get("tickets", []), products, fixes)
+        result["products"] = [{"key": pr["key"], "label": pr.get("label"), "note": pr.get("note"),
+                               "count": sum(pr["key"] in p["products"] for p in patches)}
+                              for pr in products]
+        result["unassigned"] = sum(not p["products"] for p in patches)
+        if not fres.ok:
+            result["products_error"] = fres.error
     return result
+
+
+def _products_for(tickets: list[dict], products: list[dict], fixes: dict) -> list[str]:
+    """Keys of the products a commit's tickets name, in config order: by Jira
+    project, or by a fixVersion of the ticket matching the product's regex."""
+    hit = set()
+    for t in tickets:
+        for pr in products:
+            rx = pr.get("fix_versions")
+            if t["project"] in (pr.get("projects") or []) or (
+                    rx and any(re.match(rx, v or "") for v in fixes.get(t["key"], []))):
+                hit.add(pr["key"])
+    return [pr["key"] for pr in products if pr["key"] in hit]
 
 
 def collect_coming(cfg) -> dict:

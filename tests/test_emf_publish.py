@@ -55,6 +55,26 @@ def test_render_landed_notes_backports():
     assert "Already in T as backports, so not listed: 37." in html
 
 
+def test_render_landed_split_by_product():
+    p = LANDED_OK["patches"][0]
+    landed = {**LANDED_OK, "count": 3,
+              "patches": [{**p, "products": ["exa6", "exa7"]}, {**p, "number": 6, "products": ["sd"]},
+                          {**p, "number": 7, "products": []}],
+              "products": [{"key": "exa6", "label": "EXA6", "note": "EX fixVersion ES6.x", "count": 1},
+                           {"key": "exa7", "label": "EXA7", "note": "EX fixVersion ES7.x", "count": 1},
+                           {"key": "sd", "label": "EXA SD", "note": "EXM tickets", "count": 1},
+                           {"key": "gcp", "label": "EXA GCP", "count": 0}]}
+    html = emf_publish.build_landed_html(_cfg(), landed)
+    heads = ["<h3>EXA6 (1)</h3>", "<h3>EXA7 (1)</h3>", "<h3>EXA SD (1)</h3>", "<h3>EXA GCP (0)</h3>",
+             "<h3>Not assigned to a product (1)</h3>"]
+    assert all(h in html for h in heads)
+    assert [html.index(h) for h in heads] == sorted(html.index(h) for h in heads)   # EXA6 first
+    assert "EXA6 = EX fixVersion ES6.x" in html and "EXA GCP =" not in html          # note only when set
+    assert "Jira fixVersions unavailable" not in html
+    err = emf_publish.build_landed_html(_cfg(), {**landed, "products_error": "jira down"})
+    assert "Jira fixVersions unavailable:</strong> jira down" in err
+
+
 def test_render_landed_unavailable():
     html = emf_publish.build_landed_html(_cfg(), {"ok": False, "error": "no releases"})
     assert "Unavailable" in html and "no releases" in html
