@@ -47,6 +47,7 @@ def test_render_landed_ok():
     html = emf_publish.build_landed_html(_cfg(), LANDED_OK)
     assert "Since T" in html and "EX-1" in html and "Companion EMF pages" in html
     assert "not</strong> a forecast" in html
+    assert "commits merged onto EMF (" in html and "6.3.8" not in html
 
 
 def test_render_landed_unavailable():

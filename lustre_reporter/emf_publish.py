@@ -43,7 +43,7 @@ def build_landed_html(cfg, landed: dict, *, now: datetime | None = None) -> str:
     now = now or now_pt()
     emfc = cfg.emf or {}
     parts = [_info(
-        f"<p><em>What this is:</em> commits merged onto <code>{_esc(landed.get('branch') or emfc.get('release_branch'))}</code> "
+        "<p><em>What this is:</em> commits merged onto EMF "
         f"(<code>{_esc(emfc.get('repo'))}</code>) <strong>since the newest CalVer release</strong> — "
         "i.e. what is queued for the next build. This is history, <strong>not</strong> a forecast.</p>", now)]
     if not landed.get("ok"):
