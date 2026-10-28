@@ -29,18 +29,23 @@ def _wire(monkeypatch, *, stability_ok=True, changelog_ok=True, patches=None):
                             lambda job, days=14, limit=500: ToolResult(ok=False, data=None,
                                                                        error="401", kind="auth"))
 
-    def bc(clone, branch, max_builds=1, fetch_cfg=None):
+    seen = {}
+
+    def bc(clone, branch, *, tag_pattern, max_builds=1, fetch_cfg=None):
+        seen[branch] = tag_pattern
         if not changelog_ok:
             return {"ok": False, "error": "no ref"}
         return {"ok": True, "latest_tag": "T", "unreleased": patches or [], "fetch_note": None}
     monkeypatch.setattr(daily_report.git_tags, "build_changelog", bc)
+    return seen
 
 
 def test_build_report(monkeypatch, cfg):
-    _wire(monkeypatch)
+    seen = _wire(monkeypatch)
     rep = daily_report.build_report(cfg, days=7)
     assert rep["days"] == 7 and len(rep["branches"]) == 2
     assert rep["branches"][0]["stability"]["ok"] and rep["branches"][0]["landed"]["ok"]
+    assert seen == {b.gerrit_branch: b.tag_pattern for b in cfg.branches}
 
 
 def test_build_report_default_days(monkeypatch, cfg):

@@ -17,6 +17,10 @@ def _log_output(recs):
     return "\x1e".join(recs) + "\x1e"
 
 
+ES6 = r"2\.14\.0-ddn\d+"
+ES7 = r"2\.16\.0-ddn\d+"
+
+
 # ---------------- pure helpers ----------------
 def test_subsystem():
     assert git_tags._subsystem("LU-1 kernel: x") == "kernel"
@@ -126,7 +130,7 @@ def test_ensure_fresh_timeout(monkeypatch):
 
 # ---------------- last_tag ----------------
 def test_last_tag_clone_missing():
-    r = git_tags.last_tag("/nonexistent/xyz", "b")
+    r = git_tags.last_tag("/nonexistent/xyz", "b", tag_pattern=ES7)
     assert r["ok"] is False and "not found" in r["error"]
 
 
@@ -147,7 +151,7 @@ def test_last_tag_latest(monkeypatch, tmp_path):
             return cp(stdout="2026-07-08T00:00:00Z\n")
         return cp()
     monkeypatch.setattr(git_tags, "_git", resp)
-    r = git_tags.last_tag(str(tmp_path), "b_es7_0", fetch_cfg={})
+    r = git_tags.last_tag(str(tmp_path), "b_es7_0", tag_pattern=ES7, fetch_cfg={})
     assert r["ok"] and r["tag"] == "2.16.0-ddn54" and r["date"] == "2026-07-08" and r["manual"] is False
 
 
@@ -156,7 +160,7 @@ def test_last_tag_ref_missing(monkeypatch, tmp_path):
     _fresh(monkeypatch)
     monkeypatch.setattr(git_tags, "_git",
                         lambda c, a, **k: cp(rc=1) if a[0] == "rev-parse" else cp())
-    r = git_tags.last_tag(str(tmp_path), "b", fetch_cfg={})
+    r = git_tags.last_tag(str(tmp_path), "b", tag_pattern=ES7, fetch_cfg={})
     assert r["ok"] is False and "not found" in r["error"]
 
 
@@ -171,7 +175,7 @@ def test_last_tag_no_tags(monkeypatch, tmp_path):
             return cp(stdout="\n")
         return cp()
     monkeypatch.setattr(git_tags, "_git", resp)
-    assert git_tags.last_tag(str(tmp_path), "b", fetch_cfg={})["ok"] is False
+    assert git_tags.last_tag(str(tmp_path), "b", tag_pattern=ES7, fetch_cfg={})["ok"] is False
 
 
 def test_last_tag_specific_ok(monkeypatch, tmp_path):
@@ -187,7 +191,7 @@ def test_last_tag_specific_ok(monkeypatch, tmp_path):
             return cp(stdout="2026-07-01T00:00:00Z\n")
         return cp()
     monkeypatch.setattr(git_tags, "_git", resp)
-    r = git_tags.last_tag(str(tmp_path), "b", tag="2.16.0-ddn52", fetch_cfg={})
+    r = git_tags.last_tag(str(tmp_path), "b", tag="2.16.0-ddn52", tag_pattern=ES7, fetch_cfg={})
     assert r["ok"] and r["tag"] == "2.16.0-ddn52" and r["manual"] is True
 
 
@@ -197,7 +201,7 @@ def test_last_tag_specific_not_found(monkeypatch, tmp_path):
     monkeypatch.setattr(git_tags, "_git",
                         lambda c, a, **k: (cp(rc=0) if a[-1].startswith("origin/") else cp(rc=1))
                         if a[0] == "rev-parse" else cp())
-    r = git_tags.last_tag(str(tmp_path), "b", tag="nope", fetch_cfg={})
+    r = git_tags.last_tag(str(tmp_path), "b", tag="nope", tag_pattern=ES7, fetch_cfg={})
     assert r["ok"] is False and "not found" in r["error"]
 
 
@@ -207,7 +211,7 @@ def test_last_tag_specific_not_ancestor(monkeypatch, tmp_path):
     monkeypatch.setattr(git_tags, "_git",
                         lambda c, a, **k: cp(rc=1) if a[0] == "merge-base"
                         else (cp(rc=0) if a[0] == "rev-parse" else cp()))
-    r = git_tags.last_tag(str(tmp_path), "b", tag="X", fetch_cfg={})
+    r = git_tags.last_tag(str(tmp_path), "b", tag="X", tag_pattern=ES7, fetch_cfg={})
     assert r["ok"] is False and "not on" in r["error"]
 
 
@@ -225,8 +229,26 @@ def test_last_tag_fetch_false(monkeypatch, tmp_path):
             return cp(stdout="2026-01-01T00:00:00Z\n")
         return cp()
     monkeypatch.setattr(git_tags, "_git", resp)
-    r = git_tags.last_tag(str(tmp_path), "b", fetch=False, fetch_cfg={})
+    r = git_tags.last_tag(str(tmp_path), "b", tag_pattern=r"T\d+", fetch=False, fetch_cfg={})
     assert r["ok"] and r["fetch_note"] is None
+
+
+def test_last_tag_skips_foreign_tags(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    _fresh(monkeypatch)
+
+    def resp(c, a, **k):
+        if a[0] == "rev-parse":
+            return cp(rc=0)
+        if a[0] == "tag":
+            return cp(stdout="lipe-2.101\nEXA6.3.10\n2.14.0-ddn263\nlipe-2.100\n")
+        if a[0] == "log":
+            assert a[-1] == "2.14.0-ddn263^{commit}"
+            return cp(stdout="2026-10-02T09:01:47+08:00\n")
+        return cp()
+    monkeypatch.setattr(git_tags, "_git", resp)
+    r = git_tags.last_tag(str(tmp_path), "b_es6_0", tag_pattern=ES6, fetch_cfg={})
+    assert r["ok"] and r["tag"] == "2.14.0-ddn263" and r["manual"] is False
 
 
 # ---------------- build_changelog ----------------
@@ -250,7 +272,7 @@ def test_build_changelog(monkeypatch, tmp_path):
             return cp(stdout=_log_output(recs))
         return cp()
     monkeypatch.setattr(git_tags, "_git", resp)
-    cl = git_tags.build_changelog(str(tmp_path), "b", max_builds=2, fetch_cfg={})
+    cl = git_tags.build_changelog(str(tmp_path), "b", tag_pattern=r"T\d+", max_builds=2, fetch_cfg={})
     assert cl["ok"] and cl["latest_tag"] == "T3" and cl["latest_date"] == "2026-07-09"
     assert len(cl["builds"]) == 2
     assert cl["builds"][0]["tag"] == "T3" and cl["builds"][0]["prev"] == "T2" and cl["builds"][0]["count"] == 2
@@ -260,7 +282,7 @@ def test_build_changelog(monkeypatch, tmp_path):
 
 
 def test_build_changelog_clone_missing():
-    assert git_tags.build_changelog("/no/where", "b")["ok"] is False
+    assert git_tags.build_changelog("/no/where", "b", tag_pattern=ES6)["ok"] is False
 
 
 def test_build_changelog_ref_missing(monkeypatch, tmp_path):
@@ -268,7 +290,7 @@ def test_build_changelog_ref_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(git_tags, "_ensure_fresh", lambda *a: {"note": "⚠ stale"})
     monkeypatch.setattr(git_tags, "_git",
                         lambda c, a, **k: cp(rc=1) if a[0] == "rev-parse" else cp())
-    r = git_tags.build_changelog(str(tmp_path), "b", fetch_cfg={})
+    r = git_tags.build_changelog(str(tmp_path), "b", tag_pattern=ES6, fetch_cfg={})
     assert r["ok"] is False and r["fetch_note"] == "⚠ stale"
 
 
@@ -283,7 +305,49 @@ def test_build_changelog_no_tags(monkeypatch, tmp_path):
             return cp(stdout="")
         return cp()
     monkeypatch.setattr(git_tags, "_git", resp)
-    assert git_tags.build_changelog(str(tmp_path), "b", fetch_cfg={})["ok"] is False
+    assert git_tags.build_changelog(str(tmp_path), "b", tag_pattern=ES6, fetch_cfg={})["ok"] is False
+
+
+def test_build_changelog_skips_adjacent_foreign_tags(monkeypatch, tmp_path):
+    # b_es6_0 as of 2 Oct 2026: lipe-2.100 was cut 43s before 2.14.0-ddn263 on
+    # its parent commit and EXA6.3.9 shares ddn262's commit. Neither may become
+    # a build boundary, nor may the mistyped 2.14.0-2.14.0-ddn116.
+    (tmp_path / ".git").mkdir()
+    _fresh(monkeypatch)
+    sizes = {"2.14.0-ddn262..2.14.0-ddn263": 29, "2.14.0-ddn261..2.14.0-ddn262": 4,
+             "2.14.0-ddn261": 7, "2.14.0-ddn263..origin/b_es6_0": 3}
+
+    def resp(c, a, **k):
+        if a[0] == "rev-parse":
+            return cp(rc=0)
+        if a[0] == "tag":
+            return cp(stdout="2.14.0-ddn263\nlipe-2.100\nEXA6.3.9\n2.14.0-ddn262\n"
+                             "lipe-2.99\n2.14.0-ddn261\n2.14.0-2.14.0-ddn116\n")
+        if a[0] == "log" and a[1] == "-1":
+            return cp(stdout="2026-10-02T09:01:47+08:00\n")
+        if a[0] == "log":
+            recs = [_rec(f"s{i}", f"EX-{i} osd: x", "Al", "2026-10-01T00:00:00Z", "")
+                    for i in range(sizes[a[1]])]
+            return cp(stdout=_log_output(recs))
+        return cp()
+    monkeypatch.setattr(git_tags, "_git", resp)
+    cl = git_tags.build_changelog(str(tmp_path), "b_es6_0", tag_pattern=ES6, fetch_cfg={})
+    assert cl["ok"] and cl["latest_tag"] == "2.14.0-ddn263"
+    assert [(b["tag"], b["prev"], b["count"]) for b in cl["builds"]] == [
+        ("2.14.0-ddn263", "2.14.0-ddn262", 29),
+        ("2.14.0-ddn262", "2.14.0-ddn261", 4),
+        ("2.14.0-ddn261", None, 7),
+    ]
+    assert cl["unreleased_count"] == 3
+
+
+def test_build_changelog_only_foreign_tags(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    _fresh(monkeypatch)
+    monkeypatch.setattr(git_tags, "_git",
+                        lambda c, a, **k: cp(stdout="lipe-2.100\nEXA6.3.9\n") if a[0] == "tag" else cp())
+    r = git_tags.build_changelog(str(tmp_path), "b_es6_0", tag_pattern=ES6, fetch_cfg={})
+    assert r["ok"] is False and "no tags matching" in r["error"]
 
 
 def test_git_runs_real(tmp_path):

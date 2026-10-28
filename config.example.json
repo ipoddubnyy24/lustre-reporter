@@ -83,7 +83,8 @@
       "gerrit_branch": "b_es6_0",
       "maloo_trigger_job": "lustre-b_es6_0",
       "ping_name": "Li Xi",
-      "ping_email": "lixi@ddn.com"
+      "ping_email": "lixi@ddn.com",
+      "tag_pattern": "2\\.14\\.0-ddn\\d+"
     },
     {
       "key": "es7",
@@ -92,7 +93,8 @@
       "gerrit_branch": "b_es7_0",
       "maloo_trigger_job": "lustre-b_es7_0",
       "ping_name": "Marc-Andre Vef",
-      "ping_email": "mvef@ddn.com"
+      "ping_email": "mvef@ddn.com",
+      "tag_pattern": "2\\.16\\.0-ddn\\d+"
     }
   ],
   "masters": [

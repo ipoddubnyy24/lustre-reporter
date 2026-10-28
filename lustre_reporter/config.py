@@ -36,6 +36,9 @@ class Branch:
     maloo_trigger_job: str  # Maloo trigger_job / Jenkins job, e.g. "lustre-b_es6_0"
     ping_name: str  # reviewer to ping for backports, e.g. "Li Xi"
     ping_email: str  # their address for the Teams deep link, e.g. "lixi@ddn.com"
+    # Regex (full match) for the branch's Lustre build tags, e.g. r"2\.14\.0-ddn\d+".
+    # Only these are builds; lipe-*/EXA* tags on the same history are ignored.
+    tag_pattern: str = r"\d+\.\d+\.\d+-ddn\d+"
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ class Config:
                 maloo_trigger_job="lustre-b_es6_0",
                 ping_name="Li Xi",
                 ping_email="lixi@ddn.com",
+                tag_pattern=r"2\.14\.0-ddn\d+",
             ),
             Branch(
                 key="es7",
@@ -81,6 +85,7 @@ class Config:
                 maloo_trigger_job="lustre-b_es7_0",
                 ping_name="Marc-Andre Vef",
                 ping_email="mvef@ddn.com",
+                tag_pattern=r"2\.16\.0-ddn\d+",
             ),
         ]
     )

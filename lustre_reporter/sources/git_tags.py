@@ -87,14 +87,24 @@ def _ensure_fresh(clone: str, gerrit_branch: str, fetch_cfg: dict) -> dict:
             "note": "⚠ could not reach any remote — showing the local clone copy, which may be stale"}
 
 
-def last_tag(clone_dir: str, gerrit_branch: str, *, tag: str | None = None,
+def _build_tags(clone: str, ref: str, tag_pattern: str) -> list[str]:
+    """The branch's build tags reachable from ``ref``, newest first: only tags
+    that fully match ``tag_pattern`` (its Lustre family, e.g. 2.14.0-ddnNNN).
+    Other tags cut on the same history (lipe-*, EXA6.3.x) are not builds and
+    must never become a build boundary."""
+    rx = re.compile(tag_pattern)
+    out = _git(clone, ["tag", "--merged", ref, "--sort=-creatordate"]).stdout
+    return [t for t in out.splitlines() if rx.fullmatch(t)]
+
+
+def last_tag(clone_dir: str, gerrit_branch: str, *, tag_pattern: str, tag: str | None = None,
              fetch: bool = True, fetch_cfg: dict | None = None) -> dict:
     """Resolve a tag for ``origin/<gerrit_branch>`` and return
     {ok, tag, date (YYYY-MM-DD), datetime, manual, fetch_note}.
 
     With ``tag`` given, verify it exists and is reachable from the branch;
-    otherwise pick the newest tag reachable from the branch. On failure returns
-    {ok: False, error}.
+    otherwise pick the branch's newest build tag (see ``_build_tags``). On
+    failure returns {ok: False, error}.
     """
     clone = os.path.expanduser(clone_dir or "")
     if not clone or not (Path(clone) / ".git").exists():
@@ -117,10 +127,9 @@ def last_tag(clone_dir: str, gerrit_branch: str, *, tag: str | None = None,
                     "fetch_note": fetch_note}
         chosen, manual = tag, True
     else:
-        tags = _git(clone, ["tag", "--merged", ref, "--sort=-creatordate"])
-        tag_list = [t for t in tags.stdout.splitlines() if t.strip()]
+        tag_list = _build_tags(clone, ref, tag_pattern)
         if not tag_list:
-            return {"ok": False, "error": f"no tags reachable from {ref}",
+            return {"ok": False, "error": f"no tags matching '{tag_pattern}' reachable from {ref}",
                     "fetch_note": fetch_note}
         chosen, manual = tag_list[0], False
 
@@ -170,10 +179,11 @@ def _commits(clone: str, rng: str) -> list[dict]:
     return records
 
 
-def build_changelog(clone_dir: str, gerrit_branch: str, *, max_builds: int = 5,
+def build_changelog(clone_dir: str, gerrit_branch: str, *, tag_pattern: str, max_builds: int = 5,
                     fetch: bool = True, fetch_cfg: dict | None = None) -> dict:
-    """Per-build changelog for one branch: the patches each recent tag introduced
-    (``prev_tag..tag``) plus what's merged but unreleased (``latest_tag..HEAD``).
+    """Per-build changelog for one branch: the patches each recent build tag
+    introduced (``prev_tag..tag``) plus what's merged but unreleased
+    (``latest_tag..HEAD``). Only ``tag_pattern`` tags count (see ``_build_tags``).
 
     Returns {ok, branch, latest_tag, latest_date, unreleased[], unreleased_count,
              builds[{tag, prev, date, count, areas, patches[]}], fetch_note}.
@@ -189,10 +199,10 @@ def build_changelog(clone_dir: str, gerrit_branch: str, *, max_builds: int = 5,
     if _git(clone, ["rev-parse", "--verify", "--quiet", ref]).returncode != 0:
         return {"ok": False, "error": f"'{ref}' not found in {clone}", "fetch_note": fetch_note}
 
-    tags = [t for t in _git(clone, ["tag", "--merged", ref, "--sort=-creatordate"]).stdout.splitlines()
-            if t.strip()]
+    tags = _build_tags(clone, ref, tag_pattern)
     if not tags:
-        return {"ok": False, "error": f"no tags reachable from {ref}", "fetch_note": fetch_note}
+        return {"ok": False, "error": f"no tags matching '{tag_pattern}' reachable from {ref}",
+                "fetch_note": fetch_note}
 
     def _tag_date(t: str) -> str:
         return _git(clone, ["log", "-1", "--format=%cI", t + "^{commit}"]).stdout.strip()[:10]

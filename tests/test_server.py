@@ -103,19 +103,23 @@ def test_api_landed_days_error(monkeypatch, cfg):
 
 
 def test_api_landed_tag_ok(monkeypatch, cfg):
-    monkeypatch.setattr(server.git_tags, "last_tag",
-                        lambda clone, br, tag=None, fetch_cfg=None: {"ok": True, "tag": "T",
-                                                                     "date": "2026-07-01", "manual": bool(tag)})
+    seen = {}
+
+    def lt(clone, br, *, tag_pattern, tag=None, fetch_cfg=None):
+        seen[br] = tag_pattern
+        return {"ok": True, "tag": "T", "date": "2026-07-01", "manual": bool(tag)}
+    monkeypatch.setattr(server.git_tags, "last_tag", lt)
     monkeypatch.setattr(server.gerrit, "merged_since",
                         lambda p, b, since, limit=500: okt([{"number": 2, "tickets": []}]))
     b0 = server.api_landed(cfg, {"mode": ["tag"]})["branches"][0]
     assert b0["ok"] and b0["tag"] == "T" and b0["tag_manual"] is False and b0["count"] == 1
+    assert seen == {b.gerrit_branch: b.tag_pattern for b in cfg.branches}
 
 
 def test_api_landed_tag_manual_note(monkeypatch, cfg):
     monkeypatch.setattr(server.git_tags, "last_tag",
-                        lambda clone, br, tag=None, fetch_cfg=None: {"ok": True, "tag": tag, "date": "d",
-                                                                     "manual": True, "fetch_note": "⚠ stale"})
+                        lambda clone, br, tag=None, tag_pattern=None, fetch_cfg=None: {
+                            "ok": True, "tag": tag, "date": "d", "manual": True, "fetch_note": "⚠ stale"})
     monkeypatch.setattr(server.gerrit, "merged_since", lambda p, b, since, limit=500: okt([]))
     r = server.api_landed(cfg, {"mode": ["tag"], "tag": ["X"]})
     assert r["tag"] == "X" and r["branches"][0]["tag_manual"] is True
@@ -124,7 +128,8 @@ def test_api_landed_tag_manual_note(monkeypatch, cfg):
 
 def test_api_landed_tag_error(monkeypatch, cfg):
     monkeypatch.setattr(server.git_tags, "last_tag",
-                        lambda clone, br, tag=None, fetch_cfg=None: {"ok": False, "error": "no ref", "fetch_note": "⚠ x"})
+                        lambda clone, br, tag=None, tag_pattern=None, fetch_cfg=None: {
+                            "ok": False, "error": "no ref", "fetch_note": "⚠ x"})
     b0 = server.api_landed(cfg, {"mode": ["tag"]})["branches"][0]
     assert b0["ok"] is False and b0["error"] == "no ref" and b0["fetch_note"] == "⚠ x"
 

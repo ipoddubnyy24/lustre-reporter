@@ -110,9 +110,12 @@ def _one_build_cl(ok=True):
 def test_publish_all_mixed(monkeypatch, cfg):
     cfg.confluence = {"enabled": True, "space_id": "1", "parent_id": "2",
                       "max_builds": 5, "title_template": "T {label}"}
-    monkeypatch.setattr(publish.git_tags, "build_changelog",
-                        lambda clone, branch, max_builds=5, fetch_cfg=None:
-                        _one_build_cl(branch == "b_es6_0"))
+    seen = {}
+
+    def bc(clone, branch, *, tag_pattern, max_builds=5, fetch_cfg=None):
+        seen[branch] = tag_pattern
+        return _one_build_cl(branch == "b_es6_0")
+    monkeypatch.setattr(publish.git_tags, "build_changelog", bc)
 
     class FakeClient:
         def __init__(self, *a):
@@ -126,6 +129,7 @@ def test_publish_all_mixed(monkeypatch, cfg):
     assert r["ok"] is False                                  # es7 failed
     assert by["es6"]["ok"] is True and by["es6"]["action"] == "created"
     assert by["es7"]["ok"] is False and "no ref" in by["es7"]["error"]
+    assert seen == {b.gerrit_branch: b.tag_pattern for b in cfg.branches}
 
 
 def test_publish_all_upsert_error(monkeypatch, cfg):

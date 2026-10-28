@@ -164,6 +164,7 @@ def publish_all(cfg) -> dict:
     results = []
     for b in cfg.branches:
         cl = git_tags.build_changelog(cfg.lustre_clone, b.gerrit_branch,
+                                      tag_pattern=b.tag_pattern,
                                       max_builds=conf.get("max_builds", 5),
                                       fetch_cfg=cfg.git_fetch)
         if not cl.get("ok"):

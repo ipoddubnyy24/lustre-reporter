@@ -36,6 +36,7 @@ def build_report(cfg, *, days: int | None = None) -> dict:
             st = {"ok": False, "error": sres.error}
 
         cl = git_tags.build_changelog(cfg.lustre_clone, b.gerrit_branch,
+                                      tag_pattern=b.tag_pattern,
                                       max_builds=1, fetch_cfg=cfg.git_fetch)
         if cl.get("ok"):
             landed = {"ok": True, "tag": cl["latest_tag"], "patches": cl["unreleased"],

@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 
@@ -12,6 +13,15 @@ def test_defaults_and_branch_lookup():
     assert c.branch("es7").gerrit_branch == "b_es7_0"
     with pytest.raises(KeyError):
         c.branch("nope")
+
+
+def test_branch_tag_patterns():
+    c = Config()
+    es6, es7 = c.branch("es6").tag_pattern, c.branch("es7").tag_pattern
+    assert re.fullmatch(es6, "2.14.0-ddn263") and re.fullmatch(es7, "2.16.0-ddn62")
+    for tag in ("lipe-2.100", "EXA6.3.9", "2.14.0-2.14.0-ddn116", "2.16.0-ddn62"):
+        assert not re.fullmatch(es6, tag)
+    assert not re.fullmatch(es7, "2.14.0-ddn263")
 
 
 def test_cloud_routing_case_insensitive():
@@ -55,6 +65,9 @@ def test_load_config_overrides(monkeypatch, tmp_path):
     assert c.port == 9999 and c.backport_scan_days == 50 and c.lustre_clone == "/somewhere"
     assert c.cloud_projects == ("FOO",)
     assert [b.key for b in c.branches] == ["esX"]
+    # a branch without tag_pattern still ignores non-Lustre tags
+    assert re.fullmatch(c.branches[0].tag_pattern, "2.16.0-ddn62")
+    assert not re.fullmatch(c.branches[0].tag_pattern, "lipe-2.100")
     assert [m.key for m in c.masters] == ["m"]
     # dict fields merge (unspecified keys keep defaults)
     assert c.git_fetch["use_origin"] is False and c.git_fetch["use_gerrit_https"] is True

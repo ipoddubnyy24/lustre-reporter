@@ -176,7 +176,9 @@ port with `LUSTRE_REPORTER_PORT` (default 9835) — don't run the daemon and
 The Landed report publishes a **per-branch QA changelog** to Confluence — one
 page per branch, to **every folder in `confluence.targets`** (by default the
 personal **"lustre"** folder *and* the shared **EXAScaler-ENG › lustre-reports**
-folder). For each *build* (tag) it shows:
+folder). A *build* is a tag in the branch's own Lustre family (`tag_pattern`:
+`2.14.0-ddnNNN` on es6, `2.16.0-ddnNN` on es7); other tags on the branch, such as
+`lipe-*` or `EXA6.3.x`, are never build boundaries. For each build it shows:
 
 - **In build `<tag>`**: what that build added vs the previous build
   (`prev_tag..tag`). Always populated, even right after a tag is cut — which is
