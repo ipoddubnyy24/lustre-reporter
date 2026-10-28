@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 
-from ..cli import ToolResult, run_json
+from ..cli import ToolResult, run_json, run_text
 from ..util import parse_tickets, subsystem
 
 _GH = "gh"
@@ -29,8 +29,8 @@ def _api(path: str, jq: str, *, timeout: int = 90) -> ToolResult:
     return run_json(_GH, ["api", path, "--jq", jq], timeout=timeout)
 
 
-_RUN_JQ = ('[.workflow_runs[] | {conclusion, status, created_at, '
-           'head_branch, event, url: .html_url}]')
+_RUN_JQ = ('[.workflow_runs[] | {id, run_number, conclusion, status, created_at, '
+           'head_branch, head_sha, event, url: .html_url}]')
 
 
 def workflow_runs(repo: str, workflow: str, *, since: str | None = None,
@@ -64,6 +64,40 @@ def workflow_runs(repo: str, workflow: str, *, since: str | None = None,
         if len(page_runs) < per_page:      # last page reached
             break
     return ToolResult(ok=True, data=runs)
+
+
+def run(repo: str, run_id: int) -> ToolResult:
+    """One workflow run: {id, run_number, run_attempt, conclusion, created_at,
+    head_branch, head_sha, event, url, title}."""
+    jq = ('{id, run_number, run_attempt, conclusion, status, created_at, head_branch, '
+          'head_sha, event, url: .html_url, title: .display_title}')
+    return _api(f"repos/{repo}/actions/runs/{run_id}", jq)
+
+
+def failed_jobs(repo: str, run_id: int, *, per_page: int = 30, max_pages: int = 10) -> ToolResult:
+    """Failed jobs of a run's latest attempt: [{id, name, url, failed_steps}].
+
+    Paged at 30: the nightly has ~100 jobs and bigger pages fail with HTTP 502.
+    """
+    jq = ('[.jobs[] | {id, name, conclusion, url: .html_url, '
+          'failed_steps: [.steps[] | select(.conclusion == "failure") | .name]}]')
+    out: list = []
+    for page in range(1, max_pages + 1):
+        res = _api(f"repos/{repo}/actions/runs/{run_id}/jobs?filter=latest"
+                   f"&per_page={per_page}&page={page}", jq)
+        if not res.ok:
+            return res
+        rows = res.data or []
+        out.extend(j for j in rows if j.get("conclusion") == "failure")
+        if len(rows) < per_page:          # last page reached
+            break
+    return ToolResult(ok=True, data=out)
+
+
+def failed_log(repo: str, job_id: int) -> ToolResult:
+    """Log of a job's failed steps (``gh run view --log-failed``) as text."""
+    return run_text(_GH, ["run", "view", "--job", str(job_id), "--log-failed", "-R", repo],
+                    timeout=180)
 
 
 def releases(repo: str, *, limit: int = 40) -> ToolResult:

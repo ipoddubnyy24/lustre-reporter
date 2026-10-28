@@ -224,6 +224,23 @@ def test_api_emf_stability_bad_from(monkeypatch, cfg):
     assert r["ok"] and r["days"] == 45     # invalid 'from' -> falls back to days
 
 
+def test_api_emf_failure_reasons(monkeypatch, cfg):
+    seen = {}
+    monkeypatch.setattr(emf, "collect_failure_reasons", lambda c, **k: seen.update(k) or {"ok": True})
+    assert server.api_emf_failure_reasons(cfg, {"days": ["14"]})["ok"]
+    assert seen == {"days": 14, "frm": None, "to": None}
+
+
+def test_api_emf_analysis(monkeypatch, cfg):
+    seen = {}
+    monkeypatch.setattr(emf, "analyze_run", lambda c, rid, refresh=False: seen.update(rid=rid, refresh=refresh)
+                        or {"ok": True})
+    assert server.api_emf_analysis(cfg, {"run": ["40430597220"], "refresh": ["1"]})["ok"]
+    assert seen == {"rid": 40430597220, "refresh": True}
+    bad = server.api_emf_analysis(cfg, {"run": ["../etc"]})
+    assert not bad["ok"] and "run id" in bad["error"]
+
+
 def test_api_emf_landed(monkeypatch, cfg):
     monkeypatch.setattr(emf.github, "default_branch", lambda repo: okt({"name": "master"}))
     monkeypatch.setattr(emf.jira, "fix_versions", lambda keys: okt({"EX-1": ["ES6.3.10"]}))

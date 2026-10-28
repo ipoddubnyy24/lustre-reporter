@@ -101,3 +101,21 @@ def run_json(tool: str, args: list[str], *, timeout: int = _DEFAULT_TIMEOUT) -> 
                           error=f"'{tool}' returned no parseable JSON", kind="error")
 
     return ToolResult(ok=True, data=payload)
+
+
+def run_text(tool: str, args: list[str], *, timeout: int = _DEFAULT_TIMEOUT) -> ToolResult:
+    """Run ``tool args...`` and return stdout as text (for logs, not JSON).
+
+    A non-zero exit, or empty stdout with something on stderr, is a failure.
+    """
+    if not _is_available(tool):
+        return ToolResult(ok=False, data=None, error=f"'{tool}' not found on PATH.", kind="missing")
+    try:
+        proc = subprocess.run([tool, *args], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return ToolResult(ok=False, data=None,
+                          error=f"'{tool}' timed out after {timeout}s", kind="error")
+    if proc.returncode != 0 or (not proc.stdout.strip() and proc.stderr.strip()):
+        kind, msg = _classify(None, proc.stderr.strip())
+        return ToolResult(ok=False, data=None, error=msg, kind=kind)
+    return ToolResult(ok=True, data=proc.stdout)

@@ -2,7 +2,9 @@
 
 Shared by the ``/api/emf/*`` endpoints and the Confluence publisher so both
 present identical data. Three collectors mirror the Lustre reports:
-- ``collect_stability`` — nightly CI pass-rate trend (GitHub Actions).
+- ``collect_stability`` — nightly CI pass-rate trend (GitHub Actions), plus
+  ``collect_failure_reasons`` (failures that repeat) and ``analyze_run`` (one
+  failed run as a Markdown document).
 - ``collect_landed``    — commits since the newest CalVer release.
 - ``collect_coming``    — risk-weighted forecast per upcoming release, with each
   release tagged by its *release line* (main stream vs GCP vs …) so consumers
@@ -12,10 +14,20 @@ present identical data. Three collectors mirror the Lustre reports:
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime, timedelta, timezone
 
 from . import util
-from .analysis import emf_stability, forecast
+from .analysis import emf_failure, emf_stability, forecast
+from .cli import ToolResult
 from .sources import github, jira
+
+# A finished run never changes, so its failed jobs and a complete analysis are
+# kept for the life of the process.
+_FAILED_JOBS: dict = {}
+_ANALYSES: dict = {}
+_REASON_SAMPLE = 40     # newest failed runs read for the common reasons (one jobs lookup each)
+_MAX_LOGS = 6           # failed jobs whose logs one analysis downloads
 
 
 def release_line(name: str, lines: list[dict]) -> dict | None:
@@ -26,8 +38,8 @@ def release_line(name: str, lines: list[dict]) -> dict | None:
     return None
 
 
-def collect_stability(cfg, *, days: int | None = None, frm: str | None = None,
-                      to: str | None = None) -> dict:
+def _window(cfg, days: int | None, frm: str | None, to: str | None) -> tuple[dict, ToolResult]:
+    """(base fields, nightly runs) for a rolling ``days`` window or a from/to range."""
     emf = cfg.emf or {}
     days = emf.get("stability_days", 30) if days is None else days
     if frm:
@@ -38,13 +50,106 @@ def collect_stability(cfg, *, days: int | None = None, frm: str | None = None,
                                since=since, until=until)
     base = {"days": days, "from": frm, "to": to,
             "repo": emf.get("repo"), "workflow": emf.get("nightly_workflow")}
+    if res.ok and frm:  # defensively bound to the window (the server-side created filter also does)
+        hi = to or "9999-99-99"
+        res = ToolResult(ok=True, data=[r for r in res.data
+                                        if frm <= str(r.get("created_at") or "")[:10] <= hi])
+    return base, res
+
+
+def collect_stability(cfg, *, days: int | None = None, frm: str | None = None,
+                      to: str | None = None) -> dict:
+    base, res = _window(cfg, days, frm, to)
     if not res.ok:
         return {**base, "ok": False, "kind": res.kind, "error": res.error}
-    runs = res.data
-    if frm:  # defensively bound to the window (the server-side created filter also does)
-        hi = to or "9999-99-99"
-        runs = [r for r in runs if frm <= str(r.get("created_at") or "")[:10] <= hi]
-    return {**base, "ok": True, **emf_stability.report(runs, days=days)}
+    return {**base, "ok": True, **emf_stability.report(res.data, days=base["days"])}
+
+
+def _failed_jobs(repo: str, run_id: int) -> ToolResult:
+    if run_id in _FAILED_JOBS:
+        return ToolResult(ok=True, data=_FAILED_JOBS[run_id])
+    res = github.failed_jobs(repo, run_id)
+    if res.ok:
+        _FAILED_JOBS[run_id] = res.data
+    return res
+
+
+def _failed_runs(repo: str, runs: list[dict]) -> tuple[list[dict], int, int]:
+    """(newest failed runs with their failed jobs, failed runs in total, lookups that failed)."""
+    failed = sorted((r for r in runs if r.get("conclusion") == "failure"),
+                    key=lambda r: str(r.get("created_at") or ""), reverse=True)
+    sample = failed[:_REASON_SAMPLE]
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        found = list(pool.map(lambda r: _failed_jobs(repo, r.get("id")), sample))
+    read = [{"id": r.get("id"), "date": r.get("created_at"), "url": r.get("url"), "jobs": j.data}
+            for r, j in zip(sample, found) if j.ok]
+    return read, len(failed), len(sample) - len(read)
+
+
+def collect_failure_reasons(cfg, *, days: int | None = None, frm: str | None = None,
+                            to: str | None = None) -> dict:
+    """The failure signatures that repeat across the window's failed nightly runs."""
+    base, res = _window(cfg, days, frm, to)
+    if not res.ok:
+        return {**base, "ok": False, "kind": res.kind, "error": res.error}
+    read, failed, errors = _failed_runs(base["repo"], res.data)
+    return {**base, "ok": True, "failed": failed, "read": len(read), "errors": errors,
+            "reasons": emf_failure.common_reasons(read, min_count=2, top=5)}
+
+
+def analyze_run(cfg, run_id: int, *, refresh: bool = False) -> dict:
+    """Markdown analysis of one nightly run: where each failed job stopped and the
+    log lines before it, how often the same failure hit the runs of the window
+    leading up to it, and what changed since the last successful run."""
+    if not refresh and run_id in _ANALYSES:
+        return _ANALYSES[run_id]
+    repo = (cfg.emf or {}).get("repo")
+    rres = github.run(repo, run_id)
+    if not rres.ok:
+        return {"ok": False, "kind": rres.kind, "error": rres.error, "run_id": run_id}
+    run = rres.data
+    if refresh:
+        _FAILED_JOBS.pop(run_id, None)
+    jres = _failed_jobs(repo, run_id)
+    if not jres.ok:
+        return {"ok": False, "kind": jres.kind, "error": jres.error, "run_id": run_id}
+    jobs = jres.data[:_MAX_LOGS]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        logs = list(pool.map(lambda j: github.failed_log(repo, j["id"]), jobs))
+    rows = []
+    for j, lres in zip(jobs, logs):
+        parsed = emf_failure.parse_log(lres.data) if lres.ok else None
+        rows.append({**j, "signature": emf_failure.signature(j.get("name"), j.get("failed_steps") or []),
+                     "parsed": parsed, "log_error": None if lres.ok else lres.error,
+                     "category": emf_failure.classify(parsed) if parsed else None})
+
+    day = str(run.get("created_at") or "")[:10]
+    days = (cfg.emf or {}).get("stability_days", 30)
+    frm = (date.fromisoformat(day) - timedelta(days=days - 1)).isoformat() if day else None
+    base, wres = _window(cfg, days, frm, day or None)
+    reasons, failed_total, last, changes = [], 0, None, None
+    if wres.ok:
+        read, failed_total, _ = _failed_runs(repo, wres.data)
+        reasons = emf_failure.common_reasons(read)
+        earlier = [r for r in wres.data if r.get("conclusion") == "success"
+                   and str(r.get("created_at") or "") < str(run.get("created_at") or "")]
+        last = max(earlier, key=lambda r: str(r.get("created_at") or ""), default=None)
+        if last and last.get("head_sha") and run.get("head_sha") and last["head_sha"] != run["head_sha"]:
+            cres = github.compare(repo, last["head_sha"], run["head_sha"])
+            changes = cres.data if cres.ok else {"error": cres.error}
+    doc = emf_failure.markdown({
+        "repo": repo, "workflow": base["workflow"], "window_days": days, "run": run, "jobs": rows,
+        "reasons": reasons, "failed_total": failed_total, "last_success": last, "changes": changes,
+        "history_error": None if wres.ok else wres.error,
+        "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")})
+    complete = (wres.ok and all(r["log_error"] is None for r in rows)
+                and not (changes or {}).get("error") and run.get("status") == "completed")
+    result = {"ok": True, "run_id": run_id, "run_number": run.get("run_number"), "url": run.get("url"),
+              "filename": f"emf-nightly-{run.get('run_number') or run_id}-analysis.md",
+              "markdown": doc, "complete": complete}
+    if complete:
+        _ANALYSES[run_id] = result
+    return result
 
 
 def collect_landed(cfg, *, tag: str | None = None) -> dict:

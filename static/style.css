@@ -330,3 +330,20 @@ svg.trend text { fill: var(--md-on-surface-variant); font-size: 10px; font-famil
 .chip.tier-progress { background: var(--md-warning-container); color: var(--md-on-warning-container); }
 .chip.tier-todo { background: var(--md-error-container); color: var(--md-on-error-container); }
 .chip.tier-other { background: var(--md-surface-container-highest); color: var(--md-on-surface-variant); }
+
+/* EMF build failures: common reasons (Build stability) and the analysis page */
+.reasons { margin-top: 16px; }
+.reason-list { margin: 0 0 8px; padding-left: 22px; }
+.reason-list li { margin: 8px 0; }
+.reason-list .mono { overflow-wrap: anywhere; }
+.md-doc { line-height: 1.55; overflow-wrap: anywhere; }
+.md-doc h1 { font-size: 22px; margin: 0 0 12px; }
+.md-doc h2 { font-size: 17px; margin: 24px 0 8px; }
+.md-doc h3 { font-size: 15px; margin: 18px 0 6px; text-transform: none; letter-spacing: 0; }
+.md-doc ul { padding-left: 22px; margin: 6px 0; }
+.md-doc li.sub { margin-left: 22px; }
+.md-doc pre { background: var(--md-surface-container-highest); border-radius: var(--r-sm); padding: 10px 12px;
+  overflow-x: auto; white-space: pre; overflow-wrap: normal; }
+.md-doc pre code { font-size: 12px; }
+.md-doc hr { border: 0; border-top: 1px solid var(--md-outline-variant); margin: 24px 0 12px; }
+.doc-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }

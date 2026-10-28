@@ -56,6 +56,7 @@ def trend(runs: list[dict]) -> list[dict]:
 
 def run_rows(runs: list[dict], *, limit: int = 60) -> list[dict]:
     rows = [{
+        "id": r.get("id"),
         "date": r.get("created_at"),
         "conclusion": r.get("conclusion") or r.get("status"),
         "branch": r.get("head_branch"),

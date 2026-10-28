@@ -60,7 +60,7 @@ cloud Atlassian token (the same `~/.jira-tool.json` one Confluence uses) for Jir
 
 | EMF report | Source | What it shows |
 |---|---|---|
-| Build stability | GitHub Actions (`nightly-build-6_3_x.yml`) | pass-rate trend of the nightly workflow |
+| Build stability | GitHub Actions (`nightly-build-6_3_x.yml`) | pass-rate trend of the nightly workflow; the failure reasons that repeat (failed job with matrix values dropped, and its first failed step); an **Analyze** link per failed run that opens a Markdown analysis (failing step and inner action, log lines before the error, same failure in the 30 days before, commits since the last green run) with a .md download |
 | Landed | GitHub Releases (CalVer) + commit compare | what merged onto the repo's default branch (`master`; set `emf.release_branch` to override) since the newest CalVer release (`6.3.9-YYYYMMDDNN`), newest first; changes that release already shipped as backports are left out. Split into one table per product (`emf.products`: EXA6, EXA7, EXA SD, EXA GCP) by each commit's tickets: EXM/GCP keys by project, EX keys by fixVersion |
 | Coming | EX Jira items + `fixVersion` release dates | a **risk-weighted forecast** of what lands in each upcoming release |
 
@@ -288,6 +288,8 @@ The UI is served from `static/` and calls these JSON endpoints (all `GET`;
 | `/api/publish` | Push the QA changelog to Confluence now |
 | `/api/slack-report` | Post the daily build-health report to Slack now |
 | `/api/emf/stability?days=30` | EMF nightly CI pass-rate trend (GitHub Actions) |
+| `/api/emf/failure-reasons?days=30` | Failure reasons that repeat across the window's failed nightly runs |
+| `/api/emf/analysis?run=<id>` | Markdown analysis of one nightly run (`&refresh=1` re-reads it); page: `/static/analysis.html?run=<id>` |
 | `/api/emf/landed?tag=…` | EMF commits since the latest (or given) CalVer release |
 | `/api/emf/coming` | Risk-weighted forecast per upcoming release (Jira × bands) |
 | `/api/emf/publish` | Push the EMF Landed + per-line Incoming pages to Confluence now |

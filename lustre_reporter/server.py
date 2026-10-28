@@ -254,11 +254,9 @@ def api_slack_report(cfg: Config, qs: dict) -> dict:
 # ------------------------------- EMF endpoints -------------------------------
 
 
-def api_emf_stability(cfg: Config, qs: dict) -> dict:
-    """EMF build stability: pass/fail trend of the configured CI workflow.
-
-    ``?days=N`` for a rolling window, or ``?from=YYYY-MM-DD&to=YYYY-MM-DD`` for a
-    custom range (both clamped to a year of runs)."""
+def _emf_window(cfg: Config, qs: dict) -> tuple[int, str | None, str | None]:
+    """(days, from, to): ``?days=N`` for a rolling window, or
+    ``?from=YYYY-MM-DD&to=YYYY-MM-DD`` for a custom range (both clamped to a year)."""
     emf_cfg = cfg.emf or {}
     frm = qs.get("from", [None])[0]
     to = qs.get("to", [None])[0]
@@ -270,7 +268,27 @@ def api_emf_stability(cfg: Config, qs: dict) -> dict:
         days = max(1, min(span, 365))
     else:
         days = max(1, min(_int(qs, "days", emf_cfg.get("stability_days", 30)), 365))
+    return days, frm, to
+
+
+def api_emf_stability(cfg: Config, qs: dict) -> dict:
+    """EMF build stability: pass/fail trend of the configured CI workflow."""
+    days, frm, to = _emf_window(cfg, qs)
     return emf.collect_stability(cfg, days=days, frm=frm, to=to)
+
+
+def api_emf_failure_reasons(cfg: Config, qs: dict) -> dict:
+    """Failure reasons that repeat across the window's failed nightly runs."""
+    days, frm, to = _emf_window(cfg, qs)
+    return emf.collect_failure_reasons(cfg, days=days, frm=frm, to=to)
+
+
+def api_emf_analysis(cfg: Config, qs: dict) -> dict:
+    """Markdown analysis of one nightly run: ``?run=<GitHub run id>[&refresh=1]``."""
+    raw = (qs.get("run", [""])[0] or "").strip()
+    if not raw.isdigit():
+        return {"ok": False, "kind": "error", "error": "run must be a GitHub Actions run id"}
+    return emf.analyze_run(cfg, int(raw), refresh=qs.get("refresh", ["0"])[0] == "1")
 
 
 def api_emf_landed(cfg: Config, qs: dict) -> dict:
@@ -298,6 +316,7 @@ _CACHED = {
     "/api/ticket": 900,
     "/api/change": 600,
     "/api/emf/stability": 900,
+    "/api/emf/failure-reasons": 900,
     "/api/emf/landed": 300,
     "/api/emf/coming": 600,
 }
@@ -313,6 +332,8 @@ _ROUTES = {
     "/api/publish": api_publish,
     "/api/slack-report": api_slack_report,
     "/api/emf/stability": api_emf_stability,
+    "/api/emf/failure-reasons": api_emf_failure_reasons,
+    "/api/emf/analysis": api_emf_analysis,
     "/api/emf/landed": api_emf_landed,
     "/api/emf/coming": api_emf_coming,
     "/api/emf/publish": api_emf_publish,

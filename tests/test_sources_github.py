@@ -55,6 +55,40 @@ def test_compare(monkeypatch):
     assert github.compare("o/r", "a", "b").data["total"] == 3
 
 
+def test_run(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(github, "run_json", lambda tool, args, timeout=90: (seen.update(a=args), _ok({"id": 9}))[1])
+    assert github.run("o/r", 9).data == {"id": 9} and "repos/o/r/actions/runs/9" in seen["a"]
+
+
+def test_failed_jobs_pages_and_filters(monkeypatch):
+    pages = []
+
+    def fake(tool, args, timeout=90):
+        page = int(args[1].rsplit("page=", 1)[1])
+        pages.append(args[1])
+        rows = [{"id": n, "conclusion": "success"} for n in range(29)] + [{"id": 99, "conclusion": "failure"}]
+        return _ok(rows if page == 1 else [{"id": 100, "conclusion": "failure"}])   # full page, then short
+    monkeypatch.setattr(github, "run_json", fake)
+    r = github.failed_jobs("o/r", 5)
+    assert [j["id"] for j in r.data] == [99, 100] and len(pages) == 2 and "filter=latest" in pages[0]
+
+
+def test_failed_jobs_error_and_max_pages(monkeypatch):
+    monkeypatch.setattr(github, "run_json", lambda tool, args, timeout=90: _err("HTTP 502"))
+    assert not github.failed_jobs("o/r", 5).ok
+    monkeypatch.setattr(github, "run_json", lambda tool, args, timeout=90: _ok([{"conclusion": "failure"}]))
+    assert len(github.failed_jobs("o/r", 5, per_page=1, max_pages=3).data) == 3
+
+
+def test_failed_log(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(github, "run_text", lambda tool, args, timeout=90: (seen.update(a=args, t=timeout),
+                                                                            _ok("log"))[1])
+    assert github.failed_log("o/r", 7).data == "log"
+    assert seen["a"] == ["run", "view", "--job", "7", "--log-failed", "-R", "o/r"] and seen["t"] == 180
+
+
 def test_default_branch(monkeypatch):
     seen = {}
     monkeypatch.setattr(github, "run_json",

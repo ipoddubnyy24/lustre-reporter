@@ -12,6 +12,24 @@ def _avail(monkeypatch):
     monkeypatch.setattr(cli.shutil, "which", lambda t: "/bin/" + t)
 
 
+def test_run_text(monkeypatch):
+    monkeypatch.setattr(cli.shutil, "which", lambda t: None)
+    assert cli.run_text("gh", ["x"]).kind == "missing"
+    _avail(monkeypatch)
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: _cp(stdout="log\n"))
+    assert cli.run_text("gh", ["x"]).data == "log\n"
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: _cp(stderr="error connecting to blob"))
+    r = cli.run_text("gh", ["x"])                                   # exit 0, nothing on stdout
+    assert not r.ok and "blob" in r.error
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: _cp(returncode=1, stderr="HTTP 401"))
+    assert cli.run_text("gh", ["x"]).kind == "auth"
+
+    def slow(*a, **k):
+        raise subprocess.TimeoutExpired("gh", 1)
+    monkeypatch.setattr(cli.subprocess, "run", slow)
+    assert "timed out" in cli.run_text("gh", ["x"], timeout=1).error
+
+
 def test_missing_tool(monkeypatch):
     monkeypatch.setattr(cli.shutil, "which", lambda t: None)
     r = cli.run_json("nope", ["x"])

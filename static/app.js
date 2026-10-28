@@ -76,8 +76,8 @@ const S = {
 // stability/topfail are keyed by branch (one section per selected branch)
 const DATA = { stability: {}, topfail: {}, landed: null, backports: null };
 const LOADING = { landed: false, backports: false };
-const EMFDATA = { stability: null, landed: null, coming: null };
-const EMFLOADING = { stability: false, landed: false, coming: false };
+const EMFDATA = { stability: null, reasons: null, landed: null, coming: null };
+const EMFLOADING = { stability: false, reasons: false, landed: false, coming: false };
 let emfLoaded = false;
 let autoTimer = null;
 
@@ -531,14 +531,19 @@ async function openPing(branchMeta, row) {
 //  EMF — build stability (GitHub Actions), landed (CalVer), coming (forecast)
 // =====================================================================
 async function loadEmfStability(refresh) {
-  EMFLOADING.stability = true; renderEmfStability();
+  EMFLOADING.stability = true; EMFLOADING.reasons = true; renderEmfStability();
   const params = { days: S.emf.stabilityDays };
   if (S.emf.stabilityCustom && S.emf.stabilityFrom) {
     params.from = S.emf.stabilityFrom; params.to = S.emf.stabilityTo || CFG.today;
   }
+  // Reasons read every failed run's jobs (slow when cold), so they fill in after the chart.
+  const reasons = api("/api/emf/failure-reasons", params, refresh)
+    .catch((e) => ({ ok: false, kind: "error", error: String(e) }));
   try { EMFDATA.stability = await api("/api/emf/stability", params, refresh); }
   catch (e) { EMFDATA.stability = { ok: false, kind: "error", error: String(e) }; }
   EMFLOADING.stability = false; renderEmfStability();
+  EMFDATA.reasons = await reasons;
+  EMFLOADING.reasons = false; renderEmfStability();
 }
 async function loadEmfLanded(refresh) {
   EMFLOADING.landed = true; renderEmfLanded();
@@ -592,7 +597,8 @@ function renderEmfStability() {
       tile("", sum.runs, "runs"),
       tile(sum.passed ? "good" : "", sum.passed, "passed"),
       tile(sum.failed ? "bad" : "good", sum.failed, "failed"),
-      tile("", sum.other, "cancelled / skipped"))));
+      tile("", sum.other, "cancelled / skipped")),
+    emfFailureReasons()));
   out.push(el("div", { class: "card" }, el("h2", {}, "Stability trend"),
     d.trend.length ? drawTrend(d.trend, {
       barKey: "runs", rateKey: "pass_rate",
@@ -609,13 +615,36 @@ function renderEmfStability() {
     const rows = runs.map((r) => el("tr", {},
       el("td", {}, chip(r.conclusion)), el("td", { class: "nowrap" }, fmtDate(r.date, true)),
       el("td", { class: "mono small" }, r.branch || "—"), el("td", { class: "small muted" }, r.event || ""),
-      el("td", {}, r.url ? el("a", { href: r.url, target: "_blank" }, "open") : "—")));
+      el("td", {}, r.url ? el("a", { href: r.url, target: "_blank" }, "open") : "—"),
+      el("td", {}, r.conclusion === "failure" && r.id ? el("a", { href: analysisHref(r.id), target: "_blank", title: "Open the failure analysis (Markdown) in a new tab" }, "Analyze") : "")));
     rcard.append(el("div", { class: "scroll-x" }, el("table", {},
-      el("thead", {}, el("tr", {}, el("th", {}, "Result"), el("th", {}, "When"), el("th", {}, "Branch"), el("th", {}, "Event"), el("th", {}, "Link"))),
+      el("thead", {}, el("tr", {}, el("th", {}, "Result"), el("th", {}, "When"), el("th", {}, "Branch"), el("th", {}, "Event"), el("th", {}, "Link"), el("th", {}, "Analysis"))),
       el("tbody", {}, ...rows))));
   }
   out.push(rcard);
   root.replaceChildren(...out);
+}
+
+const analysisHref = (id) => "/static/analysis.html?run=" + encodeURIComponent(id);
+
+// Failure signatures (failed job, matrix values dropped, and its first failed
+// step) that repeat across the window's failed runs, most frequent first.
+function emfFailureReasons() {
+  const box = el("div", { class: "reasons" }, el("h3", {}, "Most common failure reasons"));
+  const r = EMFDATA.reasons;
+  if (EMFLOADING.reasons || !r) { box.append(spinnerBox("Reading the failed runs…")); return box; }
+  if (!r.ok) { box.append(el("div", { class: "muted small" }, "Could not read the failed runs: " + (r.error || "unknown error"))); return box; }
+  const note = r.read < r.failed ? " (newest " + r.read + " of " + r.failed + " failed runs read)" : "";
+  if (!r.reasons.length) {
+    box.append(el("div", { class: "muted small" }, (r.failed ? "No failure reason repeats across the failed runs" : "No failed runs in this period") + note + "."));
+    return box;
+  }
+  box.append(el("ol", { class: "reason-list" }, ...r.reasons.map((g) => el("li", {},
+    el("span", { class: "chip bad" }, g.count + " runs"), " ", el("span", { class: "mono small" }, g.signature),
+    el("div", { class: "muted small" }, "Last " + fmtDate(g.last_seen) + " · ",
+      g.runs.slice(0, 3).flatMap((x, i) => [i ? ", " : "", el("a", { href: analysisHref(x.id), target: "_blank" }, "analyze " + fmtDate(x.date))]))))),
+    el("div", { class: "muted small" }, "Grouped by failed job (matrix values dropped) and its first failed step" + note + "."));
+  return box;
 }
 
 async function publishEmf(btn) {
